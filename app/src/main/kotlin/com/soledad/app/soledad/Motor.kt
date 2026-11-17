@@ -192,7 +192,7 @@ class MotorSoledad(
     }
 
     /**
-     * Llegó una notificación de WhatsApp: detecta y programa (con la misma espera al azar de 1–5 min).
+     * Llegó una notificación de WhatsApp: detecta y programa (al instante o con la espera al azar elegida).
      * No sortea revisión nueva: las revisiones al azar siguen de respaldo. Idempotente con `chequear` (la cola deduplica).
      * Devuelve cuántas respuestas nuevas programó.
      */
@@ -239,7 +239,8 @@ class MotorSoledad(
             val cuando = ahora + Azar.esperaRespuestaMs(rnd, cfg)
             if (cola.encolarPara(m, cuando)) {
                 programados++
-                anotar(m, Etapa.PROGRAMADO, "${m.nombre} escribió: «${m.texto}». Respondo a las ${hora(cuando)}.")
+                anotar(m, Etapa.PROGRAMADO, "${m.nombre} escribió: «${m.texto}». " +
+                    if (cuando <= ahora) "Respondo al instante." else "Respondo a las ${hora(cuando)}.")
             }
         }
         return when {

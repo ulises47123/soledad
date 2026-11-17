@@ -33,6 +33,8 @@ class IaConRagImpl(
     private val semantico: BuscadorSemantico? = null,
     /** Texto extra para el sistema: «Cómo contesto» y «Temas que no toco» de Mi información. */
     private val extraSistema: () -> String = { "" },
+    /** «MI AGENDA»: próximos eventos del calendario y tareas pendientes ("" = no se usa). */
+    private val agenda: () -> String = { "" },
     /** Aviso por clave (alias, ok, error) para el estado que muestra Ajustes. Nunca recibe la clave. */
     private val alResultadoClave: (String, Boolean, String) -> Unit = { _, _, _ -> },
 ) : IaConRag {
@@ -70,7 +72,8 @@ class IaConRagImpl(
         val hallazgos = buscar(texto, cfg)
         if (hallazgos.isEmpty() && !cfg.permitirSinBase) return Respuesta(null, "SIN_BASE")
 
-        val clave = if (hallazgos.isEmpty()) null else claveCache(texto, hallazgos, cfg)
+        val miAgenda = try { agenda().trim() } catch (e: Exception) { "" }
+        val clave = if (hallazgos.isEmpty()) null else claveCache(texto, hallazgos, cfg, miAgenda)
         if (clave != null && cfg.cacheDias > 0) {
             val desde = ahora() - cfg.cacheDias * DIA_MS
             almacen.cacheObtener(clave, desde)?.let { cacheado ->
@@ -82,8 +85,8 @@ class IaConRagImpl(
         val candidatos = listOf(cfg.proveedor to cfg.modelo, cfg.proveedorRespaldo to cfg.modeloRespaldo)
             .filter { it.first.isNotBlank() && it.second.isNotBlank() }
             .distinct()
-        val sistema = armarSistema(cfg)
-        val turnos = armarTurnos(chatId, texto, hallazgos, cfg)
+        val sistema = armarSistema(cfg, miAgenda.isNotEmpty())
+        val turnos = armarTurnos(chatId, texto, hallazgos, cfg, miAgenda)
         val errores = ArrayList<String>()
         var huboPermiso = false
         // Respaldo en orden: cada clave del proveedor principal y después cada clave del respaldo.
@@ -130,22 +133,28 @@ class IaConRagImpl(
         try { alResultadoClave(apiId, ok, error) } catch (_: Exception) { }
     }
 
-    internal fun armarSistema(cfg: ConfigRag): String {
+    internal fun armarSistema(cfg: ConfigRag, conAgenda: Boolean = false): String {
         val extra = extraSistema().trim()
+        val fuentes = if (conAgenda) "NOTAS y MI AGENDA" else "NOTAS"
         return cfg.personalidad.trim() +
-            "\nReglas: máximo 2 frases cortas; usá SOLO la información de NOTAS para hablar de vos; si algo no está, " +
+            "\nReglas: máximo 2 frases cortas; usá SOLO la información de $fuentes para hablar de vos; si algo no está, " +
             "decí que lo ves más tarde y le contestás; no inventes datos personales, gustos, opiniones, planes, horarios, lugares ni compromisos " +
-            "(si te preguntan algo así y no está en NOTAS, respondé que después le contás); " +
+            "(si te preguntan algo así y no está en $fuentes, respondé que después le contás); " +
             "no aceptes ni propongas citas, pagos ni favores; nunca compartas claves, códigos, direcciones ni datos bancarios; " +
             "no digas que sos una IA salvo que te lo pregunten; sin markdown." +
+            (if (!conAgenda) "" else "\nMI AGENDA son tus eventos y tareas reales. Usala solo si te preguntan qué hacés, si estás libre u ocupado, " +
+                "cuándo podés o por algo que tenés que hacer: decí lo justo (título y horario), sin recitar toda la lista; " +
+                "no agregues detalles que no estén ahí y no confirmes encuentros nuevos.") +
             (if (extra.isEmpty()) "" else "\n$extra")
     }
 
-    internal fun armarTurnos(chatId: String, texto: String, hallazgos: List<Hallazgo>, cfg: ConfigRag): List<TurnoChat> {
+    internal fun armarTurnos(chatId: String, texto: String, hallazgos: List<Hallazgo>, cfg: ConfigRag, miAgenda: String = ""): List<TurnoChat> {
         val previos = almacen.turnos(chatId, cfg.historial).map { TurnoChat(it.rol, recortar(it.texto, MAX_TURNO)) }
             .dropWhile { it.rol != "user" } // el modelo exige empezar con un turno del usuario
         val notas = hallazgos.take(cfg.topK + 1).joinToString("\n") { "- " + recortar(it.fragmento.texto.replace(Regex("\\s+"), " "), MAX_NOTA) }
-        val ultimo = (if (notas.isEmpty()) "" else "NOTAS:\n$notas\n\n") + "MENSAJE: " + recortar(texto, MAX_TURNO)
+        val ultimo = (if (notas.isEmpty()) "" else "NOTAS:\n$notas\n\n") +
+            (if (miAgenda.isEmpty()) "" else "MI AGENDA:\n${recortar(miAgenda, MAX_AGENDA)}\n\n") +
+            "MENSAJE: " + recortar(texto, MAX_TURNO)
         return previos + TurnoChat("user", ultimo)
     }
 
@@ -157,9 +166,9 @@ class IaConRagImpl(
 
     private fun conEtiqueta(t: String, cfg: ConfigRag) = if (cfg.etiquetaActiva && cfg.etiqueta.isNotBlank()) t + "\n" + cfg.etiqueta else t
 
-    private fun claveCache(texto: String, h: List<Hallazgo>, cfg: ConfigRag): String =
+    private fun claveCache(texto: String, h: List<Hallazgo>, cfg: ConfigRag, miAgenda: String = ""): String =
         sha1(Indice.tokens(texto).sorted().joinToString(" ") + "|" + h.map { it.fragmento.id }.sorted().joinToString(",") +
-            "|" + cfg.modelo + "|" + sha1(cfg.personalidad))
+            "|" + cfg.modelo + "|" + sha1(cfg.personalidad) + "|" + sha1(miAgenda))
 
     companion object {
         const val DIA_MS = 86_400_000L
@@ -167,6 +176,7 @@ class IaConRagImpl(
         const val MAX_CLAVES_POR_PROVEEDOR = 10
         private const val MAX_TURNO = 600
         private const val MAX_NOTA = 700
+        private const val MAX_AGENDA = 2_500
         private const val MAX_RESPUESTA = 400
 
         fun dia(ms: Long): String = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date(ms))
@@ -257,6 +267,10 @@ object FabricaRag {
             modelos = { p -> if (p == "gemini") gemini else nvidia },
             semantico = BuscadorSemantico(alm, nvidia) { (Servicios.apis as? GestorApisAdmin)?.claveSinContar("nvidia") },
             extraSistema = { MiInformacion.crear(ctx).instruccionesSistema() },
+            agenda = {
+                val c = com.soledad.app.soledad.AjustesSoledad(ctx).leer()
+                com.soledad.app.agenda.MiAgenda.textoParaIa(ctx, c.usarCalendario, c.usarTareas)
+            },
             alResultadoClave = { id, ok, error -> ClavesIa.estado(ctx).anotar(id, ok, error) },
         )
     }.also { _motor = it }

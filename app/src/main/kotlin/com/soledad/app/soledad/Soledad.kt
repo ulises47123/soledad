@@ -48,6 +48,7 @@ class AjustesSoledad(ctx: Context) {
             intervalosMin = p.getString("intervalos", null)?.split(',')?.mapNotNull { it.trim().toIntOrNull() }
                 ?.let { Azar.intervalosValidos(it) } ?: d.intervalosMin,
             variacionMin = Azar.variacionValida(p.getInt("variacion", d.variacionMin)),
+            alInstante = p.getBoolean("al_instante", d.alInstante),
             esperaMinMin = p.getInt("espera_min", d.esperaMinMin).coerceIn(1, 5),
             esperaMaxMin = p.getInt("espera_max", d.esperaMaxMin).coerceIn(1, 5),
             entrarAWhatsApp = p.getBoolean("entrar_whatsapp", d.entrarAWhatsApp),
@@ -55,6 +56,8 @@ class AjustesSoledad(ctx: Context) {
             responderATodos = p.getBoolean("a_todos", d.responderATodos),
             responderAlLlegar = p.getBoolean("al_llegar", d.responderAlLlegar),
             desbloquear = p.getBoolean("desbloquear", d.desbloquear),
+            usarCalendario = p.getBoolean("usar_calendario", d.usarCalendario),
+            usarTareas = p.getBoolean("usar_tareas", d.usarTareas),
         )
     }
 
@@ -65,6 +68,7 @@ class AjustesSoledad(ctx: Context) {
             .putString("etiqueta", c.etiqueta)
             .putString("intervalos", Azar.intervalosValidos(c.intervalosMin).joinToString(","))
             .putInt("variacion", Azar.variacionValida(c.variacionMin))
+            .putBoolean("al_instante", c.alInstante)
             .putInt("espera_min", c.esperaMinMin.coerceIn(1, 5))
             .putInt("espera_max", c.esperaMaxMin.coerceIn(1, 5))
             .putBoolean("entrar_whatsapp", c.entrarAWhatsApp)
@@ -72,6 +76,8 @@ class AjustesSoledad(ctx: Context) {
             .putBoolean("a_todos", c.responderATodos)
             .putBoolean("al_llegar", c.responderAlLlegar)
             .putBoolean("desbloquear", c.desbloquear)
+            .putBoolean("usar_calendario", c.usarCalendario)
+            .putBoolean("usar_tareas", c.usarTareas)
             .apply()
     }
 
@@ -191,6 +197,9 @@ object Soledad {
     /** Tras reiniciar el teléfono, actualizar la app o abrirla: si estaba encendida, vuelve a programar todo. */
     fun reanudar(ctx: Context) {
         if (!encendida(ctx)) return
+        // Tras actualizar la app, Android deja la escucha de notificaciones «en pausa»: se pide reenlazarla.
+        Escucha.reenlazar(ctx)
+        concederConShizuku(ctx)
         ServicioSoledad.iniciar(ctx)
         val ahora = System.currentTimeMillis()
         val plan = PlanificadorAlarmas(ctx)
@@ -241,8 +250,9 @@ object Soledad {
     @Volatile private var ultimoAviso = 0L
 
     /**
-     * Llegó una notificación de WhatsApp (la llama la escucha): detecta y programa la respuesta con la espera al azar.
-     * Funciona con el teléfono bloqueado: solo lee notificaciones y SQLite; la respuesta sale por la alarma exacta.
+     * Llegó una notificación de WhatsApp (la llama la escucha): detecta y programa la respuesta.
+     * Si está en «al instante», responde en este mismo momento (sin esperar a la alarma).
+     * Funciona con el teléfono bloqueado: lee la notificación y contesta por su botón «Responder».
      */
     fun alLlegar(ctx: Context) {
         val ahora = System.currentTimeMillis()
@@ -250,10 +260,11 @@ object Soledad {
         ultimoAviso = ahora
         alLlegarHilo.execute {
             val wl = ctx.getSystemService(PowerManager::class.java).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "soledad:al_llegar")
-            wl.acquire(60_000L)
+            wl.acquire(4 * 60_000L)
             try {
                 Thread.sleep(1_200) // deja que WhatsApp termine de repintar la notificación
-                motor.procesarNuevos()
+                val nuevos = motor.procesarNuevos()
+                if (nuevos > 0 && ajustes.leer().alInstante) motor.responderPendientes()
             } catch (e: Throwable) { Log.w(TAG, "al llegar: ${e.javaClass.simpleName}") } finally { if (wl.isHeld) wl.release() }
         }
     }
@@ -312,7 +323,10 @@ class ServicioSoledad : Service() {
             return START_NOT_STICKY
         }
         when (intent?.action) {
-            CHEQUEAR -> encargar { Soledad.motor.chequear() }
+            CHEQUEAR -> encargar {
+                if (Escucha.instancia == null) { Escucha.reenlazar(this); Thread.sleep(3_000) }
+                Soledad.motor.chequear()
+            }
             RESPONDER -> encargar { Soledad.motor.responderPendientes() }
         }
         return START_STICKY

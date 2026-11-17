@@ -59,18 +59,24 @@ class AzarTest {
         repeat(500) { assertTrue(Azar.proximoIntervaloMs(rnd, mucha) in 10 * MIN..30 * MIN) }
     }
 
+    @Test fun alInstantePorDefectoNoEspera() {
+        assertTrue(ConfigSoledad().alInstante)
+        val rnd = Random(3)
+        repeat(100) { assertEquals(0L, Azar.esperaRespuestaMs(rnd, ConfigSoledad())) }
+    }
+
     @Test fun esperaEntre1y5Minutos() {
         val rnd = Random(3)
         var min = Long.MAX_VALUE; var max = 0L
         repeat(5_000) {
-            val e = Azar.esperaRespuestaMs(rnd, ConfigSoledad())
+            val e = Azar.esperaRespuestaMs(rnd, ConfigSoledad(alInstante = false))
             assertTrue(e in MIN..5 * MIN)
             min = minOf(min, e); max = maxOf(max, e)
         }
         assertTrue(min < 90_000 && max > 270_000) // recorre todo el rango
         // aunque la configuración venga fuera de rango, se respeta [1, 5]
-        repeat(1_000) { assertTrue(Azar.esperaRespuestaMs(rnd, ConfigSoledad(esperaMinMin = 0, esperaMaxMin = 9)) in MIN..5 * MIN) }
-        repeat(1_000) { assertTrue(Azar.esperaRespuestaMs(rnd, ConfigSoledad(esperaMinMin = 5, esperaMaxMin = 2)) in 2 * MIN..5 * MIN) }
+        repeat(1_000) { assertTrue(Azar.esperaRespuestaMs(rnd, ConfigSoledad(alInstante = false, esperaMinMin = 0, esperaMaxMin = 9)) in MIN..5 * MIN) }
+        repeat(1_000) { assertTrue(Azar.esperaRespuestaMs(rnd, ConfigSoledad(alInstante = false, esperaMinMin = 5, esperaMaxMin = 2)) in 2 * MIN..5 * MIN) }
     }
 
     @Test fun etiquetaPorDefectoYOpcional() {
@@ -156,7 +162,18 @@ class MotorSoledadTest {
     private fun encender() { motor.activar(); ahora += 10 * MIN; chequeos.clear() }
     private fun etapas() = registro.map { it.second }
 
+    @Test fun alInstanteRespondeSinEsperar() {
+        contactos.agregar(Contacto("Ana", "Ana"))
+        encender()
+        bandeja = listOf(msg("Ana"))
+        motor.chequear()
+        assertEquals(ahora, cola.programadas().single().proximoMs) // sin espera
+        assertEquals(1, motor.responderPendientes())               // en el mismo momento
+        assertEquals("chat-Ana", enviados.single().chatId)
+    }
+
     @Test fun contactoDeLaListaSeProgramaEntre1y5MinutosYSeResponde() {
+        cfg = cfg.copy(alInstante = false)
         contactos.agregar(Contacto("Ana", "Ana"))
         encender()
         bandeja = listOf(msg("Ana"))

@@ -12,11 +12,16 @@
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <!-- Solo para elegir la lista blanca desde la agenda. Los contactos no se guardan ni se mandan a la IA. -->
     <uses-permission android:name="android.permission.READ_CONTACTS" />
+    <!-- Mi agenda: leer (solo leer) el calendario del teléfono y las tareas de My Brain. -->
+    <uses-permission android:name="android.permission.READ_CALENDAR" />
+    <uses-permission android:name="com.mhss.app.mybrain.permission.LEER_TAREAS" />
 
     <queries>
         <package android:name="moe.shizuku.privileged.api" />
         <package android:name="com.whatsapp" />
         <package android:name="com.whatsapp.w4b" />
+        <package android:name="com.mhss.app.mybrain" />
+        <package android:name="com.mhss.app.mybrain.debug" />
     </queries>
 
     <application

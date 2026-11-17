@@ -97,6 +97,30 @@ class IaConRagTest {
         assertNotNull(r.texto)
     }
 
+    @Test fun agendaVaEnElPromptYCambiaLaCache() {
+        var agenda = "Eventos de los próximos 7 días:\n- mañana 18:00 a 20:00: Seguridad Informática"
+        val conAgenda = IaConRagImpl({ cfg }, almacen, { apis }, { _ -> modelo }, { ahora }, agenda = { agenda })
+        baseHorario()
+        conAgenda.responder(msg("¿Cuál es el horario de atención mañana?"))
+        assertTrue(ultimoSistema.contains("NOTAS y MI AGENDA"))
+        val ultimo = ultimosTurnos.last().texto
+        assertTrue(ultimo.contains("MI AGENDA:\n") && ultimo.contains("Seguridad Informática"))
+        assertTrue(ultimo.indexOf("MI AGENDA") < ultimo.indexOf("MENSAJE:"))
+        // Si la agenda cambia, no se reutiliza la respuesta guardada.
+        agenda = "Eventos de los próximos 7 días: ninguno."
+        eventos.clear()
+        val r = conAgenda.responder(msg("¿Cuál es el horario de atención mañana?"))
+        assertTrue(r.nota.startsWith("IA_RAG"))
+        assertTrue(eventos.contains("generar:CLAVE"))
+    }
+
+    @Test fun sinAgendaElPromptQuedaComoAntes() {
+        baseHorario()
+        ia.responder(msg("¿Cuál es el horario de atención?"))
+        assertFalse(ultimoSistema.contains("MI AGENDA"))
+        assertFalse(ultimosTurnos.last().texto.contains("MI AGENDA"))
+    }
+
     @Test fun cacheVenceSegunCacheDias() {
         baseHorario()
         ia.responder(msg("horario de atención"))

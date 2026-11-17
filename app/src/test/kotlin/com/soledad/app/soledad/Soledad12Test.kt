@@ -137,7 +137,21 @@ class Soledad12Test {
 
     // ---------- 5) Responder apenas llega ----------
 
+    @Test fun alLlegarAlInstanteRespondeYNoDuplica() {
+        contactos.agregar(Contacto("Ana", "Ana"))
+        val m = motor()
+        bandeja = listOf(msg("Ana"))
+        assertEquals(1, m.procesarNuevos())
+        assertEquals(ahora, cola.programadas().single().proximoMs)
+        assertEquals(1, m.responderPendientes())
+        assertEquals(1, enviados.size)
+        m.chequear(); assertEquals(0, m.procesarNuevos())
+        assertEquals(0, m.responderPendientes())
+        assertEquals(1, enviados.size)
+    }
+
     @Test fun alLlegarProgramaConEsperaYNoDuplicaConLaRevision() {
+        cfg = cfg.copy(alInstante = false)
         contactos.agregar(Contacto("Ana", "Ana"))
         val m = motor()
         bandeja = listOf(msg("Ana"))

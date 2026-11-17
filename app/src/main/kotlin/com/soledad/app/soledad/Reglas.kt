@@ -13,7 +13,9 @@ data class ConfigSoledad(
     val intervalosMin: List<Int> = Azar.INTERVALOS_MIN,
     /** Variación al azar ± minutos sobre el intervalo elegido. */
     val variacionMin: Int = 5,
-    /** Espera al azar antes de responder, en minutos (entre 1 y 5). */
+    /** Responder al instante (por defecto). Si es false, espera al azar entre esperaMinMin y esperaMaxMin. */
+    val alInstante: Boolean = true,
+    /** Espera al azar antes de responder, en minutos (entre 1 y 5); solo si alInstante = false. */
     val esperaMinMin: Int = 1,
     val esperaMaxMin: Int = 5,
     /** «Entrar un momento» a WhatsApp (solo con el teléfono desbloqueado y en la pantalla de inicio). */
@@ -22,10 +24,14 @@ data class ConfigSoledad(
     val enviarPorInterfaz: Boolean = false,
     /** A quién responde: false = solo a la lista blanca (por defecto); true = a todos los chats individuales (nunca grupos). */
     val responderATodos: Boolean = false,
-    /** Reacciona apenas llega la notificación (con la misma espera al azar); las revisiones al azar quedan de respaldo. */
+    /** Reacciona apenas llega la notificación; las revisiones al azar quedan de respaldo. */
     val responderAlLlegar: Boolean = true,
     /** Desbloquear el teléfono cuando haga falta (opt-in, con la credencial guardada cifrada). */
     val desbloquear: Boolean = false,
+    /** Le pasa a la IA tus próximos eventos del calendario del teléfono. */
+    val usarCalendario: Boolean = true,
+    /** Le pasa a la IA tus tareas pendientes de My Brain. */
+    val usarTareas: Boolean = true,
     val timeoutVerificacionMs: Long = 20_000,
 ) {
     companion object {
@@ -53,8 +59,9 @@ object Azar {
         return maxOf(5 * MIN_MS, base + jitter)
     }
 
-    /** Espera antes de responder en ms: al azar, siempre dentro de [1, 5] minutos (respeta el rango elegido). */
+    /** Espera antes de responder en ms: 0 si es al instante; si no, al azar dentro de [1, 5] minutos (respeta el rango elegido). */
     fun esperaRespuestaMs(rnd: Random, cfg: ConfigSoledad): Long {
+        if (cfg.alInstante) return 0L
         val a = cfg.esperaMinMin.coerceIn(1, 5)
         val b = cfg.esperaMaxMin.coerceIn(1, 5)
         val (lo, hi) = if (a <= b) a to b else b to a

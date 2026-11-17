@@ -6,6 +6,7 @@ import android.view.Gravity
 import android.view.View
 import android.widget.LinearLayout
 import com.soledad.app.Administracion
+import com.soledad.app.agenda.MiAgenda
 import com.soledad.app.apis.ClavesIa
 import com.soledad.app.nucleo.EstadoApi
 import com.soledad.app.soledad.ConfigSoledad
@@ -77,15 +78,23 @@ class PantallaAjustes(h: Anfitrion) : Pantalla(h) {
                 cambiar { it.copy(variacionMin = variaciones[i]) }; h.refrescar()
             }
         }, Ui.ESP_DENTRO)
-        val minutos = (1..5).toList()
-        col.agregar(Ui.filaNav(a, Textos.ESPERA, Textos.espera(cfg.esperaMinMin, cfg.esperaMaxMin)) {
-            Ui.elegir(a, Textos.ESPERA_DESDE, minutos.map { "$it min" }, cfg.esperaMinMin - 1) { i ->
-                val desde = minutos[i]
-                Ui.elegir(a, Textos.ESPERA_HASTA, minutos.filter { it >= desde }.map { "$it min" }, 0) { j ->
-                    cambiar { it.copy(esperaMinMin = desde, esperaMaxMin = minutos.filter { m -> m >= desde }[j]) }; h.refrescar()
-                }
-            }
+        col.agregar(Ui.interruptor(a, Textos.AL_INSTANTE, cfg.alInstante, { if (it) Textos.AL_INSTANTE_ON else Textos.AL_INSTANTE_OFF }) { v ->
+            cambiar { it.copy(alInstante = v) }; h.refrescar()
         }, Ui.ESP_DENTRO)
+        if (!cfg.alInstante) {
+            val minutos = (1..5).toList()
+            col.agregar(Ui.filaNav(a, Textos.ESPERA, Textos.espera(cfg.esperaMinMin, cfg.esperaMaxMin)) {
+                Ui.elegir(a, Textos.ESPERA_DESDE, minutos.map { "$it min" }, cfg.esperaMinMin - 1) { i ->
+                    val desde = minutos[i]
+                    Ui.elegir(a, Textos.ESPERA_HASTA, minutos.filter { it >= desde }.map { "$it min" }, 0) { j ->
+                        cambiar { it.copy(esperaMinMin = desde, esperaMaxMin = minutos.filter { m -> m >= desde }[j]) }; h.refrescar()
+                    }
+                }
+            }, Ui.ESP_DENTRO)
+        }
+
+        // Mi agenda (calendario + tareas de My Brain)
+        construirAgenda(a, col, cfg)
 
         // WhatsApp
         col.agregar(Ui.seccion(a, Textos.AJ_WHATSAPP), Ui.ESP_GRUPO)
@@ -102,6 +111,43 @@ class PantallaAjustes(h: Anfitrion) : Pantalla(h) {
         // Claves
         construirClaves(a, col)
         return col
+    }
+
+    // ---------- Mi agenda ----------
+
+    private fun construirAgenda(a: Activity, col: LinearLayout, cfg: ConfigSoledad) {
+        col.agregar(Ui.seccion(a, Textos.AJ_AGENDA), Ui.ESP_GRUPO)
+        col.agregar(Ui.nota(a, Textos.AGENDA_NOTA), Ui.ESP_DENTRO)
+        col.agregar(Ui.interruptor(a, Textos.USAR_CALENDARIO, cfg.usarCalendario, { if (it) Textos.USAR_CALENDARIO_ON else Textos.USAR_CALENDARIO_OFF }) { v ->
+            cambiar { it.copy(usarCalendario = v) }; h.refrescar()
+        }, Ui.ESP_DENTRO)
+        if (cfg.usarCalendario) {
+            val ok = MiAgenda.calendarioPermitido(a)
+            val nivel = if (ok) Nivel.LISTO else Nivel.AVISO
+            col.agregar(Ui.texto(a, "${Semaforo.simbolo(nivel)} ${if (ok) Textos.CALENDARIO_LISTO else Textos.CALENDARIO_SIN_PERMISO}",
+                Ui.T_NOTA, Ui.colorDe(nivel), negrita = true), Ui.ESP_DENTRO)
+            if (!ok) col.agregar(Ui.boton(a, Textos.CALENDARIO_PERMISO, Ui.Estilo.SECUNDARIO) {
+                a.requestPermissions(arrayOf(android.Manifest.permission.READ_CALENDAR), CODIGO_CALENDARIO)
+            }, Ui.ESP_DENTRO)
+        }
+        col.agregar(Ui.interruptor(a, Textos.USAR_TAREAS, cfg.usarTareas, { if (it) Textos.USAR_TAREAS_ON else Textos.USAR_TAREAS_OFF }) { v ->
+            cambiar { it.copy(usarTareas = v) }; h.refrescar()
+        }, Ui.ESP_DENTRO)
+        if (cfg.usarTareas) {
+            val ok = MiAgenda.tareasPermitidas(a)
+            val nivel = if (ok) Nivel.LISTO else Nivel.AVISO
+            col.agregar(Ui.texto(a, "${Semaforo.simbolo(nivel)} ${if (ok) Textos.TAREAS_LISTAS else Textos.TAREAS_SIN_MYBRAIN}",
+                Ui.T_NOTA, Ui.colorDe(nivel), negrita = true), Ui.ESP_DENTRO)
+        }
+        col.agregar(Ui.boton(a, Textos.VER_AGENDA, Ui.Estilo.SECUNDARIO) {
+            h.enSegundoPlano({
+                val c = Soledad.ajustes.leer()
+                MiAgenda.textoParaIa(a, c.usarCalendario, c.usarTareas)
+            }) { r ->
+                val t = r.getOrNull().orEmpty()
+                Ui.mensaje(a, Textos.VER_AGENDA_TITULO, t.ifBlank { Textos.VER_AGENDA_VACIA })
+            }
+        }, Ui.ESP_DENTRO)
     }
 
     // ---------- Desbloqueo ----------
@@ -240,5 +286,9 @@ class PantallaAjustes(h: Anfitrion) : Pantalla(h) {
                 campo.fallo(Textos.errorConDetalle(e.message ?: Textos.ERROR_GENERICO)); false
             }
         })
+    }
+
+    companion object {
+        const val CODIGO_CALENDARIO = 7006
     }
 }
