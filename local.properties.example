@@ -1,7 +1,8 @@
 # Copiá este archivo como local.properties (NO se versiona) y completá tus valores.
 # Ruta del Android SDK (Android Studio la completa sola).
 sdk.dir=
-# Clave de NVIDIA NIM (https://build.nvidia.com). Opcional: también se carga desde Ajustes en la app.
-NVIDIA_API_KEY=
+# Una o varias claves de NVIDIA NIM (https://build.nvidia.com) separadas por coma, en el orden en que se prueban.
+# Opcional: también se cargan desde Ajustes. Se sigue aceptando NVIDIA_API_KEY (una sola).
+NVIDIA_API_KEYS=
 # Una o varias claves de Gemini separadas por coma. Opcional: también se cargan desde Ajustes.
 GEMINI_API_KEYS=

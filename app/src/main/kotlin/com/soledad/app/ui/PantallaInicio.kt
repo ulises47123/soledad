@@ -73,6 +73,9 @@ class PantallaInicio(h: Anfitrion) : Pantalla(h) {
         tarjeta.agregar(Ui.texto(a, "${Semaforo.simbolo(nivelModo)} ${if (cfg.modoPrueba) Textos.MODO_PRUEBA_CHIP else Textos.MODO_REAL_CHIP}",
             Ui.T_NOTA, Ui.colorDe(nivelModo), negrita = true), Ui.ESP_DENTRO / 2)
 
+        tarjeta.agregar(Ui.texto(a, Textos.respondeA(cfg.responderATodos, cfgLista.contactos.size), Ui.T_NOTA, Ui.p.texto, negrita = true),
+            Ui.ESP_DENTRO / 2)
+
         val ahora = System.currentTimeMillis()
         val prox = Soledad.estado.proximoChequeoMs
         tarjeta.agregar(dato(a, Textos.PROXIMA_REVISION,

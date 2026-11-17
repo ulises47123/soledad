@@ -17,6 +17,7 @@ import com.soledad.app.lista.Contacto
 import com.soledad.app.lista.ContactoAgenda
 import com.soledad.app.lista.ModoLista
 import com.soledad.app.lista.Nombres
+import com.soledad.app.lista.SeleccionAgenda
 import com.soledad.app.nucleo.EstadoCola
 import com.soledad.app.nucleo.Servicios
 import com.soledad.app.ui.Ui.agregar
@@ -28,6 +29,8 @@ import com.soledad.app.ui.Ui.agregar
 class PantallaLista(h: Anfitrion) : Pantalla(h) {
     override val titulo = Textos.P_LISTA
     private var permisoNegado = false
+    /** Tras cerrar el selector se ignoran los toques en «Quitar» un instante: un toque doble no puede borrar a nadie. */
+    private var quitarBloqueadoHasta = 0L
 
     override fun construir(): View {
         val a: Activity = h.actividad
@@ -39,6 +42,9 @@ class PantallaLista(h: Anfitrion) : Pantalla(h) {
 
         col.agregar(Ui.texto(a, Textos.LISTA_INTRO))
         col.agregar(Ui.nota(a, Textos.LISTA_GRUPOS), Ui.ESP_DENTRO)
+        if (com.soledad.app.soledad.Soledad.ajustes.leer().responderATodos) {
+            col.agregar(Ui.aviso(a, Textos.LISTA_SIN_USO_TITULO, Textos.LISTA_SIN_USO, Nivel.AVISO), Ui.ESP_DENTRO)
+        }
 
         // Acción principal: elegir de la agenda.
         col.agregar(Ui.boton(a, Textos.ELEGIR_CONTACTOS, Ui.Estilo.PRIMARIO) { elegirDeAgenda() }, Ui.ESP_GRUPO)
@@ -78,6 +84,7 @@ class PantallaLista(h: Anfitrion) : Pantalla(h) {
         val fila = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         fila.addView(Ui.texto(a, c.nombre, Ui.T_CUERPO, Ui.p.texto, mono = true, negrita = true), LinearLayout.LayoutParams(0, -2, 1f))
         fila.addView(Ui.boton(a, Textos.QUITAR, Ui.Estilo.PELIGRO, Textos.quitarContacto(c.nombre)) {
+            if (System.currentTimeMillis() < quitarBloqueadoHasta) return@boton
             Ui.confirmar(a, Textos.quitarContactoTitulo(c.nombre), Textos.QUITAR_CONTACTO_CUERPO, "${Textos.QUITAR} contacto") {
                 Administracion.contactos.quitar(c.id)
                 // Las respuestas programadas para ese contacto no salen.
@@ -117,7 +124,7 @@ class PantallaLista(h: Anfitrion) : Pantalla(h) {
         val enLista = lista.listar().map { it.nombre }
         // Chats que Soledad ya vio en sus revisiones (solo nombres, de chats individuales).
         val escribieron = lista.recientes(200).map { it.nombre }
-        val elegidos = LinkedHashSet<String>()
+        val seleccion = SeleccionAgenda(enLista)
 
         val caja = Ui.columna(a)
         val buscador = Ui.campo(a, Textos.BUSCAR_CONTACTO, Textos.BUSCAR_CONTACTO_EJ, tipo = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS)
@@ -131,9 +138,9 @@ class PantallaLista(h: Anfitrion) : Pantalla(h) {
             filas.removeAllViews()
             val todos = Nombres.filtrar(agenda, buscador.texto)
             val visibles = todos.take(MAX_FILAS)
-            resumen.text = Textos.resumenAgenda(visibles.size, todos.size, elegidos.size)
+            resumen.text = Textos.resumenAgenda(visibles.size, todos.size, seleccion.cantidad())
             for (c in visibles) {
-                val ya = enLista.any { Nombres.mismo(it, c.nombre) }
+                val ya = seleccion.yaEnLista(c.nombre)
                 val escribio = escribieron.any { Nombres.mismo(it, c.nombre) }
                 val detalle = listOfNotNull(
                     Nombres.finNumero(c.numero).takeIf { it.isNotEmpty() }?.let { "…$it" },
@@ -146,11 +153,11 @@ class PantallaLista(h: Anfitrion) : Pantalla(h) {
                     setTextColor(Ui.p.texto)
                     minHeight = Ui.dp(a, Ui.MIN_TOQUE)
                     buttonTintList = ColorStateList.valueOf(Ui.p.acento)
-                    isChecked = ya || c.nombre in elegidos
+                    isChecked = seleccion.marcado(c.nombre)
                     isEnabled = !ya
                     setOnCheckedChangeListener { _, v ->
-                        if (v) elegidos += c.nombre else elegidos -= c.nombre
-                        resumen.text = Textos.resumenAgenda(visibles.size, todos.size, elegidos.size)
+                        seleccion.marcar(c.nombre, v)
+                        resumen.text = Textos.resumenAgenda(visibles.size, todos.size, seleccion.cantidad())
                     }
                 }
                 filas.agregar(cb, 2)
@@ -164,8 +171,11 @@ class PantallaLista(h: Anfitrion) : Pantalla(h) {
         pintar()
 
         Ui.dialogo(a, Textos.ELEGIR_CONTACTOS, caja, Textos.AGREGAR_ELEGIDOS, {
-            if (elegidos.isEmpty()) { h.avisar(Textos.NADA_ELEGIDO); return@dialogo true }
-            val n = lista.agregarNombres(elegidos.toList())
+            quitarBloqueadoHasta = System.currentTimeMillis() + 1_200
+            val nuevos = seleccion.aAgregar()
+            if (nuevos.isEmpty()) { h.avisar(Textos.NADA_ELEGIDO); return@dialogo true }
+            // Solo AGREGA: los que ya estaban (visibles o no en el buscador) quedan como estaban.
+            val n = lista.agregarNombres(nuevos)
             h.avisar(Textos.contactosAgregados(n))
             h.refrescar()
             true

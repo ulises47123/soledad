@@ -26,6 +26,8 @@ class VerificadorListaImpl(
     private val estado: EstadoLista,
     private val reloj: () -> Long = System::currentTimeMillis,
     private val zona: TimeZone = TimeZone.getDefault(),
+    /** «A todos los que me escriban»: no se exige estar en la lista (los grupos siguen sin responderse). */
+    private val aTodos: () -> Boolean = { false },
 ) : VerificadorLista {
 
     /** chat -> (idMensaje, texto). Solo en memoria: el texto nunca se persiste. */
@@ -55,7 +57,7 @@ class VerificadorListaImpl(
                 (m.nombre.isNotBlank() && Nombres.mismo(it.nombre, m.nombre))
         }
         if (c.modo == ModoLista.EXCLUIDOS && enLista) return no("contacto en la lista de excluidos")
-        if (c.modo == ModoLista.PERMITIDOS && !enLista) return no("contacto fuera de la lista de permitidos")
+        if (c.modo == ModoLista.PERMITIDOS && !enLista && !aTodos()) return no("contacto fuera de la lista de permitidos")
 
         val previos = synchronized(textosPrevios) {
             val cola = textosPrevios.getOrPut(m.chatId) { ArrayDeque() }
@@ -94,7 +96,7 @@ class VerificadorListaImpl(
         fun crear(ctx: Context): VerificadorLista = crearConjunto(ctx).first
 
         /** Verificador y ListaContactos comparten configuración y estado. */
-        fun crearConjunto(ctx: Context): Pair<VerificadorListaImpl, ListaContactos> {
+        fun crearConjunto(ctx: Context, aTodos: () -> Boolean = { false }): Pair<VerificadorListaImpl, ListaContactos> {
             val dir = File(ctx.filesDir, "verificacion_lista")
             val repo = RepositorioConfig(AlmacenArchivo(File(dir, "config.yaml"))) {
                 try {
@@ -102,7 +104,7 @@ class VerificadorListaImpl(
                 } catch (_: Exception) { null }
             }
             val estado = EstadoLista(AlmacenArchivo(File(dir, "estado.json")))
-            return VerificadorListaImpl(repo, estado) to ListaContactos(repo, estado)
+            return VerificadorListaImpl(repo, estado, aTodos = aTodos) to ListaContactos(repo, estado)
         }
 
         private val PLACEHOLDERS = setOf(

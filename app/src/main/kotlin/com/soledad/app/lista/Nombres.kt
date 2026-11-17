@@ -2,6 +2,28 @@ package com.soledad.app.lista
 
 import java.text.Normalizer
 
+/**
+ * Lo marcado en el selector de la agenda. SOLO agrega: lo que ya está en la lista no se puede desmarcar desde acá
+ * (aunque el buscador lo esconda) y nunca se quita nada; quitar es exclusivo del botón «Quitar».
+ */
+class SeleccionAgenda(private val enLista: List<String>) {
+    private val marcados = LinkedHashSet<String>()
+
+    fun yaEnLista(nombre: String) = enLista.any { Nombres.mismo(it, nombre) }
+    fun marcado(nombre: String) = yaEnLista(nombre) || nombre in marcados
+
+    /** Cambia la marca. Lo que ya está en la lista no se toca. */
+    fun marcar(nombre: String, si: Boolean) {
+        if (yaEnLista(nombre)) return
+        if (si) marcados += nombre else marcados -= nombre
+    }
+
+    fun cantidad() = marcados.size
+
+    /** Nombres a AGREGAR (nunca incluye ni afecta a los que ya estaban). */
+    fun aAgregar(): List<String> = marcados.filter { !yaEnLista(it) }
+}
+
 /** Un contacto de la agenda del teléfono: solo el nombre visible y, si hay, un número para distinguir homónimos. */
 data class ContactoAgenda(val nombre: String, val numero: String = "")
 

@@ -29,7 +29,9 @@ class Escucha : NotificationListenerService() {
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         if (sbn.packageName !in ExtractorWhatsapp.PAQUETES) return
         if (!Soledad.encendida(this)) return
-        try { extraer(sbn, ExtractorWhatsapp.EDAD_MAXIMA_MS) } catch (_: Throwable) { }
+        val e = try { extraer(sbn, ExtractorWhatsapp.EDAD_MAXIMA_MS) } catch (_: Throwable) { null }
+        // «Responder apenas llega un mensaje»: solo si trae mensajes entrantes de un chat individual (los grupos nunca).
+        if (e != null && !e.grupo && e.mensajes.isNotEmpty()) Soledad.alLlegar(applicationContext)
     }
 
     /**

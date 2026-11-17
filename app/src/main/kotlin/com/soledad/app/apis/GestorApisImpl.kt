@@ -26,6 +26,10 @@ interface GestorApisAdmin : GestorApis {
     fun reiniciarManual(apiId: String)
     /** Clave de la primera API activa del proveedor, SIN gastar un uso (para embeddings, que son baratos). */
     fun claveSinContar(proveedor: String): String?
+    /** Clave de una API concreta (solo para «Probar todas»; nunca se muestra ni se registra). */
+    fun claveDe(apiId: String): String?
+    /** Mueve la API un lugar arriba (-1) o abajo (+1) en el orden de uso. */
+    fun mover(apiId: String, delta: Int)
 }
 
 /** Ventana de reinicio de cuota. */
@@ -69,9 +73,11 @@ class GestorApisImpl(
 
     // ---------- API pública ----------
 
-    override fun solicitar(proveedor: String): PermisoApi? = transaccion { st, ahora ->
+    override fun solicitar(proveedor: String): PermisoApi? = solicitar(proveedor, emptySet())
+
+    override fun solicitar(proveedor: String, excluir: Set<String>): PermisoApi? = transaccion { st, ahora ->
         for (c in leerConfig()) {
-            if (!c.activa || !c.proveedor.equals(proveedor, true)) continue
+            if (!c.activa || !c.proveedor.equals(proveedor, true) || c.id in excluir) continue
             val clave = resolverClave(c.clave) ?: continue
             val u = usoVigente(st, c, ahora)
             if (u.usos >= c.limite) continue
@@ -112,7 +118,10 @@ class GestorApisImpl(
         transaccion { _, _ ->
             val nombre = "API_" + id.uppercase().replace('-', '_')
             secretos.guardar(nombre, claveEnClaro.trim())
-            val lista = leerConfig().filter { it.id != id } + ConfigApi(id, proveedor.lowercase(), "\${$nombre}", limiteUsos, ventana, true)
+            val previa = leerConfig()
+            val nueva = ConfigApi(id, proveedor.lowercase(), "\${$nombre}", limiteUsos, ventana, true)
+            // Cambiar una clave existente conserva su lugar en el orden de uso.
+            val lista = if (previa.any { it.id == id }) previa.map { if (it.id == id) nueva else it } else previa + nueva
             escribirConfig(lista)
         }
     }
@@ -125,6 +134,21 @@ class GestorApisImpl(
             escribirConfig(c.filter { it.id != apiId })
             st.apis.remove(apiId)
             st.pendientes.values.removeAll { it.api == apiId }
+        }
+    }
+
+    override fun claveDe(apiId: String): String? = synchronized(cerrojo) {
+        leerConfig().firstOrNull { it.id == apiId }?.let { resolverClave(it.clave) }
+    }
+
+    override fun mover(apiId: String, delta: Int) {
+        transaccion { _, _ ->
+            val l = leerConfig().toMutableList()
+            val i = l.indexOfFirst { it.id == apiId }
+            val j = i + delta
+            if (i < 0 || j !in l.indices) return@transaccion Unit
+            val t = l[i]; l[i] = l[j]; l[j] = t
+            escribirConfig(l)
         }
     }
 

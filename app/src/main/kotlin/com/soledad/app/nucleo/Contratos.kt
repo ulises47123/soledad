@@ -104,6 +104,8 @@ class EstadoApi(val id: String, val proveedor: String, val usos: Int, val limite
 interface GestorApis {
     /** Reserva (transaccionalmente) un uso de una API activa con cupo. null si no hay ninguna disponible. */
     fun solicitar(proveedor: String): PermisoApi?
+    /** Igual, pero saltando las claves ya probadas en esta respuesta (respaldo clave por clave). */
+    fun solicitar(proveedor: String, excluir: Set<String>): PermisoApi? = if (excluir.isEmpty()) solicitar(proveedor) else null
     /** Cierra el permiso. Si `exito` es false, el uso reservado se devuelve. */
     fun confirmar(permiso: PermisoApi, exito: Boolean)
     fun estado(): List<EstadoApi>

@@ -52,6 +52,9 @@ class AjustesSoledad(ctx: Context) {
             esperaMaxMin = p.getInt("espera_max", d.esperaMaxMin).coerceIn(1, 5),
             entrarAWhatsApp = p.getBoolean("entrar_whatsapp", d.entrarAWhatsApp),
             enviarPorInterfaz = p.getBoolean("enviar_interfaz", d.enviarPorInterfaz),
+            responderATodos = p.getBoolean("a_todos", d.responderATodos),
+            responderAlLlegar = p.getBoolean("al_llegar", d.responderAlLlegar),
+            desbloquear = p.getBoolean("desbloquear", d.desbloquear),
         )
     }
 
@@ -66,6 +69,9 @@ class AjustesSoledad(ctx: Context) {
             .putInt("espera_max", c.esperaMaxMin.coerceIn(1, 5))
             .putBoolean("entrar_whatsapp", c.entrarAWhatsApp)
             .putBoolean("enviar_interfaz", c.enviarPorInterfaz)
+            .putBoolean("a_todos", c.responderATodos)
+            .putBoolean("al_llegar", c.responderAlLlegar)
+            .putBoolean("desbloquear", c.desbloquear)
             .apply()
     }
 
@@ -79,6 +85,7 @@ class EstadoPrefs(ctx: Context) : EstadoSoledad {
     override var ultimoChequeoMs: Long get() = p.getLong("ultimo", 0); set(v) { p.edit().putLong("ultimo", v).apply() }
     override var ultimoResultado: String get() = p.getString("resultado", "").orEmpty(); set(v) { p.edit().putString("resultado", v).apply() }
     override var ultimaVisitaMs: Long get() = p.getLong("visita", 0); set(v) { p.edit().putLong("visita", v).apply() }
+    override var desbloqueoFallidoMs: Long get() = p.getLong("desbloqueo_fallido", 0); set(v) { p.edit().putLong("desbloqueo_fallido", v).apply() }
 }
 
 class FuenteNotificaciones(private val estado: EstadoNotificaciones = EstadoNotificaciones.global) : FuenteMensajes {
@@ -228,6 +235,54 @@ object Soledad {
         else "Mensaje simulado «$texto». La IA no respondió: ${r.nota}."
         try { Servicios.registro.anotar(null, Etapa.PRUEBA, detalle) } catch (_: Throwable) { }
         return respuesta ?: "La IA no respondió: ${r.nota}"
+    }
+
+    private val alLlegarHilo = Executors.newSingleThreadExecutor()
+    @Volatile private var ultimoAviso = 0L
+
+    /**
+     * Llegó una notificación de WhatsApp (la llama la escucha): detecta y programa la respuesta con la espera al azar.
+     * Funciona con el teléfono bloqueado: solo lee notificaciones y SQLite; la respuesta sale por la alarma exacta.
+     */
+    fun alLlegar(ctx: Context) {
+        val ahora = System.currentTimeMillis()
+        if (ahora - ultimoAviso < 1_500) return // ráfaga de repintados de la misma notificación
+        ultimoAviso = ahora
+        alLlegarHilo.execute {
+            val wl = ctx.getSystemService(PowerManager::class.java).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "soledad:al_llegar")
+            wl.acquire(60_000L)
+            try {
+                Thread.sleep(1_200) // deja que WhatsApp termine de repintar la notificación
+                motor.procesarNuevos()
+            } catch (e: Throwable) { Log.w(TAG, "al llegar: ${e.javaClass.simpleName}") } finally { if (wl.isHeld) wl.release() }
+        }
+    }
+
+    /** Resultado de probar una clave (alias, últimos 4 caracteres, ok, detalle sin la clave). */
+    class PruebaClave(val id: String, val fin: String, val ok: Boolean, val detalle: String)
+
+    /**
+     * «Probar todas»: una llamada mínima por clave, en orden, con el mismo modelo que se usa al responder.
+     * No envía nada a nadie. Bloquea: llamar fuera del hilo principal.
+     */
+    fun probarClaves(ctx: Context): List<PruebaClave> {
+        val cfg = FabricaRag.leerConfig(ctx)
+        val modelos = mapOf(cfg.proveedor to cfg.modelo, cfg.proveedorRespaldo to cfg.modeloRespaldo)
+        val estado = com.soledad.app.apis.ClavesIa.estado(ctx)
+        return Administracion.apis.estado().map { api ->
+            val clave = Administracion.apis.claveDe(api.id)
+            val fin = com.soledad.app.apis.ClavesIa.fin(clave)
+            if (clave == null) return@map PruebaClave(api.id, fin, false, "sin clave guardada")
+            val cliente: com.soledad.app.nucleo.ClienteModelo =
+                if (api.proveedor == "gemini") com.soledad.app.apis.ClienteGemini() else com.soledad.app.apis.ClienteNvidia()
+            val modelo = modelos[api.proveedor] ?: if (api.proveedor == "gemini") "gemini-2.5-flash" else "nvidia/nemotron-3.5-super-vl-120b-a12b"
+            val r = try {
+                cliente.generar(clave, modelo, "Sos una prueba de conexión.", listOf(com.soledad.app.nucleo.TurnoChat("user", "Respondé solo: ok")), 16, 0.0)
+            } catch (e: Exception) { com.soledad.app.nucleo.ResultadoModelo(null, 0, 0, e.javaClass.simpleName) }
+            val ok = !r.texto.isNullOrBlank()
+            estado.anotar(api.id, ok, r.error ?: "")
+            PruebaClave(api.id, fin, ok, if (ok) "responde" else (r.error ?: "sin respuesta"))
+        }
     }
 
     /** Con Shizuku: alarmas exactas y exclusión del ahorro de batería (como Racha y Límites). Silencioso si no hay Shizuku. */

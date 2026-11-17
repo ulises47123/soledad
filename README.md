@@ -1,8 +1,8 @@
 # Soledad
 
 App Android (Kotlin, sin dependencias de UI externas) que **contesta tu WhatsApp con IA cuando no estás**,
-solo a los contactos de una lista blanca y usando la información que vos cargues («Mi información», con RAG).
-Usa NVIDIA NIM como modelo principal y Gemini como respaldo. Se instala **apagada**, con la lista vacía y en
+solo a los contactos de una lista blanca (o, si lo elegís, a todos los chats individuales; nunca a grupos) y usando la información que vos cargues («Mi información», con RAG).
+Usa NVIDIA NIM como modelo principal y Gemini como respaldo, con varias claves por proveedor probadas en orden. Se instala **apagada**, con la lista vacía y en
 **modo prueba** (genera respuestas pero no las envía).
 
 La documentación completa (funcionamiento, pantallas, riesgos y guía paso a paso) está en
@@ -20,7 +20,8 @@ Este repositorio **no incluye ninguna clave**. Hay dos formas de cargarlas:
 
 1. **Desde la app**: *Ajustes → Claves de IA* (se guardan cifradas con el Android Keystore y nunca se muestran).
 2. **Al compilar**: copiá `local.properties.example` como `local.properties` (está en `.gitignore`) y completá
-   `NVIDIA_API_KEY` y `GEMINI_API_KEYS`. La app las copia cifradas al primer arranque.
+   `NVIDIA_API_KEYS` (una o varias, separadas por coma; también vale `NVIDIA_API_KEY`) y `GEMINI_API_KEYS`.
+   La app importa cada clave cifrada una sola vez al arrancar.
 
 ## Compilar y probar
 

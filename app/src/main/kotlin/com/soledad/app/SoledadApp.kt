@@ -3,7 +3,9 @@ package com.soledad.app
 import android.app.Application
 import android.content.Context
 import android.util.Log
+import com.soledad.app.apis.ClaveExistente
 import com.soledad.app.apis.GestorApisAdmin
+import com.soledad.app.apis.Sembrado
 import com.soledad.app.apis.GestorApisImpl
 import com.soledad.app.envio.EjecutorRegistrado
 import com.soledad.app.envio.EnviadorWhatsApp
@@ -41,7 +43,8 @@ class SoledadApp : Application() {
 
         Servicios.cola = ColaSqlite.crear(ctx)
         Servicios.registro = RegistroSqlite.crear(ctx)
-        val (lista, contactos) = VerificadorListaImpl.crearConjunto(ctx)
+        val ajustesPrevios = AjustesSoledad(ctx)
+        val (lista, contactos) = VerificadorListaImpl.crearConjunto(ctx) { ajustesPrevios.leer().responderATodos }
         Servicios.lista = lista
         val gestor = GestorApisImpl.crear(ctx)
         Servicios.apis = gestor
@@ -53,7 +56,7 @@ class SoledadApp : Application() {
         val telefono = TelefonoAndroid(ctx)
         // La interfaz de WhatsApp (abrir el chat, uiautomator) solo si el usuario lo habilitó y el teléfono está desbloqueado.
         val shellInterfaz = ShellCondicional(EjecutorRegistrado(ShizukuShell()) { Log.d("Soledad/Shell", it) }) {
-            ajustes.leer().enviarPorInterfaz && !telefono.bloqueado()
+            ajustes.leer().let { it.enviarPorInterfaz || it.desbloquear } && !telefono.bloqueado()
         }
         Servicios.enviador = EnviadorWhatsApp(shellInterfaz, EstadoNotificaciones.global, RelojReal, { Log.i("Soledad/Envio", it) })
         Servicios.verificador = VerificadorWhatsApp(shellInterfaz, anotar = { Log.i("Soledad/Verif", it) })
@@ -80,6 +83,7 @@ class SoledadApp : Application() {
             planificador = PlanificadorAlarmas(ctx),
             visita = VisitaShizuku(ctx),
             estado = estado,
+            desbloqueo = com.soledad.app.soledad.DesbloqueoShizuku.crear(ctx, EjecutorRegistrado(ShizukuShell()) { Log.d("Soledad/Desbloqueo", it) }),
         )
     }
 
@@ -93,18 +97,19 @@ class SoledadApp : Application() {
 
     /**
      * Compilación de prueba: las claves llegan por local.properties → BuildConfig (no se versionan) y se guardan
-     * cifradas UNA vez. Si el usuario después las quita o cambia desde Ajustes, no se vuelven a sembrar.
+     * cifradas. Se importa cada clave UNA sola vez (por su huella): si el usuario después la quita, no vuelve.
+     * Varias de NVIDIA (`NVIDIA_API_KEYS=a,b`; también vale la singular `NVIDIA_API_KEY`) y varias de Gemini.
      */
     private fun sembrarClaves(ctx: Context, gestor: GestorApisAdmin) {
         val p = ctx.getSharedPreferences("soledad_interno", Context.MODE_PRIVATE)
-        if (p.getBoolean("claves_sembradas", false)) return
         try {
-            val nvidia = BuildConfig.NVIDIA_API_KEY.trim()
-            if (nvidia.isNotEmpty()) gestor.agregarClave("nvidia-1", "nvidia", nvidia, 300, "24h")
-            BuildConfig.GEMINI_API_KEYS.split(',').map { it.trim() }.filter { it.isNotEmpty() }.forEachIndexed { i, k ->
-                gestor.agregarClave("gemini-${i + 1}", "gemini", k, 50, "24h")
-            }
-            p.edit().putBoolean("claves_sembradas", true).apply()
+            val entrada = Sembrado.lista(BuildConfig.NVIDIA_API_KEYS, BuildConfig.NVIDIA_API_KEY).map { "nvidia" to it } +
+                Sembrado.lista(BuildConfig.GEMINI_API_KEYS).map { "gemini" to it }
+            if (entrada.isEmpty()) return
+            val existentes = gestor.estado().map { ClaveExistente(it.id, it.proveedor, gestor.claveDe(it.id)) }
+            val (altas, huellas) = Sembrado.plan(existentes, entrada, p.getStringSet("claves_importadas", emptySet()).orEmpty())
+            for (a in altas) gestor.agregarClave(a.id, a.proveedor, a.valor, if (a.proveedor == "nvidia") 300 else 50, "24h")
+            p.edit().putStringSet("claves_importadas", huellas).putBoolean("claves_sembradas", true).apply()
         } catch (e: Exception) {
             Log.w("Soledad", "no se pudieron guardar las claves de prueba (${e.javaClass.simpleName})")
         }

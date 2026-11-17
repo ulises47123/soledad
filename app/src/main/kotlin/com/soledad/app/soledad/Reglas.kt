@@ -20,6 +20,12 @@ data class ConfigSoledad(
     val entrarAWhatsApp: Boolean = true,
     /** Si no hay botón «Responder» en la notificación: abrir el chat y tocar Enviar (solo desbloqueado). */
     val enviarPorInterfaz: Boolean = false,
+    /** A quién responde: false = solo a la lista blanca (por defecto); true = a todos los chats individuales (nunca grupos). */
+    val responderATodos: Boolean = false,
+    /** Reacciona apenas llega la notificación (con la misma espera al azar); las revisiones al azar quedan de respaldo. */
+    val responderAlLlegar: Boolean = true,
+    /** Desbloquear el teléfono cuando haga falta (opt-in, con la credencial guardada cifrada). */
+    val desbloquear: Boolean = false,
     val timeoutVerificacionMs: Long = 20_000,
 ) {
     companion object {

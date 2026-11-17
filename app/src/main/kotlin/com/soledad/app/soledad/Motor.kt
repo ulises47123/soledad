@@ -38,6 +38,25 @@ interface Planificador {
     fun cancelarTodo()
 }
 
+/**
+ * Desbloqueo del teléfono por Shizuku (opt-in del usuario). La credencial vive cifrada en la implementación:
+ * el motor nunca la ve ni la registra.
+ */
+interface Desbloqueo {
+    /** Hay credencial guardada y Shizuku para teclearla. */
+    fun disponible(): Boolean
+    /** Despierta y desbloquea; como mucho 3 intentos de credencial en total. true si quedó desbloqueado. */
+    fun desbloquear(): Boolean
+    /** Vuelve al inicio y apaga la pantalla: el sistema vuelve a bloquear. */
+    fun volverABloquear()
+}
+
+object SinDesbloqueo : Desbloqueo {
+    override fun disponible() = false
+    override fun desbloquear() = false
+    override fun volverABloquear() {}
+}
+
 /** «Entrar un momento» a WhatsApp. Devuelve lo que hizo (para el registro) y si entró. */
 interface Visita {
     fun entrarUnMomento(): Pair<Boolean, String>
@@ -50,6 +69,8 @@ interface EstadoSoledad {
     var ultimoChequeoMs: Long
     var ultimoResultado: String
     var ultimaVisitaMs: Long
+    /** Último desbloqueo fallido: después de un fallo no se insiste por un rato (evita trabar el teléfono). */
+    var desbloqueoFallidoMs: Long
 }
 
 class EstadoMemoria : EstadoSoledad {
@@ -58,6 +79,7 @@ class EstadoMemoria : EstadoSoledad {
     override var ultimoChequeoMs = 0L
     override var ultimoResultado = ""
     override var ultimaVisitaMs = 0L
+    override var desbloqueoFallidoMs = 0L
 }
 
 /** Etapas del registro (la pantalla Registro las traduce a palabras y símbolos). */
@@ -79,8 +101,10 @@ object Etapa {
  *  - `chequear`: a la hora sorteada mira la bandeja, filtra (lista blanca, nunca grupos) y programa cada respuesta
  *    para dentro de 1–5 minutos al azar. Después sortea la próxima revisión (20 min, 50 min o 2 h, ± variación).
  *  - `responderPendientes`: cuando vence la espera, redacta con la IA y responde por «Responder» de la notificación
- *    (o, si el usuario lo habilitó y el teléfono está desbloqueado, abriendo el chat). Si no hay forma segura de
- *    responder (teléfono bloqueado sin «Responder»), queda pendiente: NUNCA intenta desbloquear.
+ *    (o, si el usuario lo habilitó y el teléfono está desbloqueado, abriendo el chat). Sin «Responder» y con el
+ *    teléfono bloqueado, solo desbloquea si el usuario activó «Desbloquear el celular para responder» (opt-in):
+ *    desbloquea, envía y vuelve a bloquear. Si no, o si el desbloqueo falla, queda pendiente.
+ *  - `procesarNuevos`: la parte de detección de `chequear`, disparada apenas llega una notificación.
  *  - `salir`: cancela alarmas y pendientes y apaga el interruptor.
  */
 class MotorSoledad(
@@ -100,7 +124,17 @@ class MotorSoledad(
     private val estado: EstadoSoledad,
     private val rnd: Random = Random.Default,
     private val reloj: () -> Long = System::currentTimeMillis,
+    private val desbloqueo: Desbloqueo = SinDesbloqueo,
 ) {
+    /** Mensajes ya anotados como ignorados (para no repetir la misma línea en cada revisión). Solo en memoria. */
+    private val ignoradosVistos = LinkedHashSet<String>()
+
+    private fun primeraVezIgnorado(id: String): Boolean {
+        val nuevo = ignoradosVistos.add(id)
+        if (ignoradosVistos.size > 500) ignoradosVistos.remove(ignoradosVistos.first())
+        return nuevo
+    }
+
     private fun anotar(m: Mensaje?, etapa: String, detalle: String) {
         try { registro.anotar(m, etapa, detalle) } catch (_: Throwable) { }
     }
@@ -127,7 +161,9 @@ class MotorSoledad(
         } else {
             var leidos = antes
             if (cfg.entrarAWhatsApp) {
+                val desbloqueado = cfg.desbloquear && telefono.bloqueado() && intentarDesbloquear(cfg, "entrar un momento a WhatsApp")
                 val (entro, nota) = try { visita.entrarUnMomento() } catch (e: Throwable) { false to "no pude entrar: ${e.javaClass.simpleName}" }
+                if (desbloqueado) volverABloquear()
                 anotar(null, Etapa.VISITA, nota)
                 if (entro) {
                     estado.ultimaVisitaMs = reloj()
@@ -155,6 +191,23 @@ class MotorSoledad(
         return resumen
     }
 
+    /**
+     * Llegó una notificación de WhatsApp: detecta y programa (con la misma espera al azar de 1–5 min).
+     * No sortea revisión nueva: las revisiones al azar siguen de respaldo. Idempotente con `chequear` (la cola deduplica).
+     * Devuelve cuántas respuestas nuevas programó.
+     */
+    @Synchronized
+    fun procesarNuevos(): Int {
+        if (!encendida()) return 0
+        val cfg = config()
+        if (!cfg.responderAlLlegar) return 0
+        val leidos = fuente.sinLeer(Azar.ventanaMs(cfg)) ?: return 0
+        val antes = cola.programadas().size
+        procesarDetectados(leidos, cfg, reloj())
+        reprogramarRespuestas()
+        return cola.programadas().size - antes
+    }
+
     private fun procesarDetectados(mensajes: List<Mensaje>, cfg: ConfigSoledad, ahora: Long): String {
         var programados = 0
         var ignorados = 0
@@ -166,13 +219,13 @@ class MotorSoledad(
             nuevos++
             if (m.grupo) {
                 ignorados++
-                anotar(null, Etapa.IGNORADO, "Grupo «${m.nombre}»: los grupos nunca se responden.")
+                if (primeraVezIgnorado(m.id)) anotar(null, Etapa.IGNORADO, "Grupo «${m.nombre}»: los grupos nunca se responden.")
                 continue
             }
             lista.verChat(m)
             if (lista.evaluar(m) == Veredicto.NO_RESPONDER) {
                 ignorados++
-                anotar(null, Etapa.IGNORADO, "${m.nombre}: ${motivoLegible(lista.motivo(m))}.")
+                if (primeraVezIgnorado(m.id)) anotar(null, Etapa.IGNORADO, "${m.nombre}: ${motivoLegible(lista.motivo(m))}.")
                 continue
             }
             val pendiente = cola.pendienteDe(m.chatId)
@@ -245,12 +298,17 @@ class MotorSoledad(
 
         val porNotificacion = fuente.puedeResponderPorNotificacion(m.chatId)
         val porInterfaz = cfg.enviarPorInterfaz && !telefono.bloqueado() && telefono.shizuku()
-        if (!cfg.modoPrueba && !porNotificacion && !porInterfaz) {
-            val motivo = if (telefono.bloqueado()) "teléfono bloqueado y sin botón «Responder» en la notificación"
-            else "sin botón «Responder» en la notificación"
+        // Sin «Responder» y con el teléfono bloqueado: solo se puede si el usuario activó el desbloqueo (opt-in).
+        val conDesbloqueo = !porNotificacion && !porInterfaz && telefono.bloqueado() && puedeDesbloquear(cfg)
+        if (!cfg.modoPrueba && !porNotificacion && !porInterfaz && !conDesbloqueo) {
+            val motivo = when {
+                !telefono.bloqueado() -> "sin botón «Responder» en la notificación"
+                cfg.desbloquear -> "teléfono bloqueado, sin botón «Responder» y sin poder desbloquear ahora"
+                else -> "teléfono bloqueado y sin botón «Responder»; el desbloqueo está apagado en Ajustes"
+            }
             val reintento = maxOf(ahora + 10 * 60_000L, estado.proximoChequeoMs)
             cola.reprogramar(m.id, reintento, "pendiente: $motivo")
-            anotar(m, Etapa.PENDIENTE, "${m.nombre}: pendiente ($motivo). No desbloqueo el teléfono; reintento a las ${hora(reintento)}.")
+            anotar(m, Etapa.PENDIENTE, "${m.nombre}: pendiente ($motivo). Reintento a las ${hora(reintento)}.")
             return
         }
 
@@ -262,33 +320,72 @@ class MotorSoledad(
             return
         }
         val texto = Etiqueta.aplicar(base, cfg)
+        val via = viaDe(r.nota)
 
         if (cfg.modoPrueba) {
             cola.marcar(m.id, EstadoCola.DESCARTADO, "modo prueba: no se envió")
-            anotar(m, Etapa.PRUEBA, "MODO PRUEBA, no enviado. A ${m.nombre} («${m.texto}») le habría respondido: «$texto»")
+            anotar(m, Etapa.PRUEBA, "MODO PRUEBA, no enviado. A ${m.nombre} («${m.texto}») le habría respondido: «$texto» (redactó $via)")
             return
         }
 
-        val accion = AccionEnvio.Texto(m.chatId, texto)
-        val desde = reloj()
-        val env = enviador.enviar(accion)
-        if (!env.ok) {
-            cola.marcar(m.id, EstadoCola.FALLIDO, "envío falló: ${env.nota}")
-            anotar(m, Etapa.ERROR, "No pude enviar la respuesta a ${m.nombre}: ${env.nota}")
-            return
+        // Se desbloquea recién ahora, con el texto listo, y se vuelve a bloquear pase lo que pase.
+        var desbloqueado = false
+        try {
+            if (conDesbloqueo) {
+                desbloqueado = intentarDesbloquear(cfg, "responder a ${m.nombre}")
+                if (!desbloqueado) {
+                    val reintento = maxOf(ahora + 10 * 60_000L, estado.proximoChequeoMs)
+                    cola.reprogramar(m.id, reintento, "pendiente: no se pudo desbloquear")
+                    anotar(m, Etapa.PENDIENTE, "${m.nombre}: pendiente (no se pudo desbloquear el teléfono). Reintento a las ${hora(reintento)}.")
+                    return
+                }
+            }
+            val accion = AccionEnvio.Texto(m.chatId, texto)
+            val desde = reloj()
+            val env = enviador.enviar(accion)
+            if (!env.ok) {
+                cola.marcar(m.id, EstadoCola.FALLIDO, "envío falló: ${env.nota}")
+                anotar(m, Etapa.ERROR, "No pude enviar la respuesta a ${m.nombre}: ${env.nota}")
+                return
+            }
+            cola.marcar(m.id, EstadoCola.ENVIADO, "enviado, falta confirmar")
+            val ok = verificador.verificar(accion, desde, cfg.timeoutVerificacionMs)
+            lista.registrarRespuesta(m.chatId)
+            if (ok) {
+                cola.marcar(m.id, EstadoCola.VERIFICADO, "respuesta confirmada")
+                anotar(m, Etapa.RESPONDIDO, "Respondí a ${m.nombre}: «$texto» (confirmado; redactó $via).")
+            } else {
+                // No se reintenta: podría duplicar un mensaje que sí salió.
+                cola.marcar(m.id, EstadoCola.ENVIADO, "enviado sin confirmación")
+                anotar(m, Etapa.RESPONDIDO, "Respondí a ${m.nombre}: «$texto» (enviado, sin confirmación; redactó $via).")
+            }
+        } finally {
+            if (desbloqueado) volverABloquear()
         }
-        cola.marcar(m.id, EstadoCola.ENVIADO, "enviado, falta confirmar")
-        val ok = verificador.verificar(accion, desde, cfg.timeoutVerificacionMs)
+    }
+
+    /** Alias de la clave que redactó («nvidia-1», «gemini-2»…), sacado de la nota de la IA. Nunca la clave. */
+    private fun viaDe(nota: String) = nota.substringAfter(" · ", "").ifBlank { "la IA" }
+
+    private fun puedeDesbloquear(cfg: ConfigSoledad): Boolean =
+        cfg.desbloquear && telefono.shizuku() && desbloqueo.disponible() && reloj() - estado.desbloqueoFallidoMs >= PAUSA_TRAS_FALLO_MS
+
+    /** Desbloquea si el usuario lo permitió. Tras un fallo (3 intentos) no insiste durante [PAUSA_TRAS_FALLO_MS]. */
+    private fun intentarDesbloquear(cfg: ConfigSoledad, para: String): Boolean {
+        if (!puedeDesbloquear(cfg)) return false
+        val ok = try { desbloqueo.desbloquear() } catch (_: Throwable) { false }
         if (ok) {
-            cola.marcar(m.id, EstadoCola.VERIFICADO, "respuesta confirmada")
-            lista.registrarRespuesta(m.chatId)
-            anotar(m, Etapa.RESPONDIDO, "Respondí a ${m.nombre}: «$texto» (confirmado).")
+            anotar(null, Etapa.SISTEMA, "Desbloqueé el teléfono para $para.")
         } else {
-            // No se reintenta: podría duplicar un mensaje que sí salió.
-            cola.marcar(m.id, EstadoCola.ENVIADO, "enviado sin confirmación")
-            lista.registrarRespuesta(m.chatId)
-            anotar(m, Etapa.RESPONDIDO, "Respondí a ${m.nombre}: «$texto» (enviado, sin confirmación).")
+            estado.desbloqueoFallidoMs = reloj()
+            anotar(null, Etapa.ERROR, "No pude desbloquear el teléfono para $para (3 intentos). No vuelvo a intentar durante 1 hora.")
         }
+        return ok
+    }
+
+    private fun volverABloquear() {
+        try { desbloqueo.volverABloquear() } catch (_: Throwable) { }
+        anotar(null, Etapa.SISTEMA, "Volví a bloquear el teléfono.")
     }
 
     /** La alarma de respuestas apunta siempre a la próxima que vence (o se cancela si no hay). */
@@ -320,6 +417,10 @@ class MotorSoledad(
         val n = cola.cancelarPendientes(motivo)
         estado.proximoChequeoMs = 0
         anotar(null, Etapa.SISTEMA, "$motivo." + if (n > 0) " Cancelé $n respuesta(s) programada(s)." else "")
+    }
+
+    companion object {
+        const val PAUSA_TRAS_FALLO_MS = 60 * 60_000L
     }
 
     /** Botón Salir (parte sin Android): apaga el interruptor, cancela alarmas y pendientes. */

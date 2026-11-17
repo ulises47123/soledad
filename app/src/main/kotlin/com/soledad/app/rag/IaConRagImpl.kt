@@ -3,6 +3,7 @@ package com.soledad.app.rag
 import android.content.Context
 import com.soledad.app.apis.ClienteGemini
 import com.soledad.app.apis.ClienteNvidia
+import com.soledad.app.apis.ClavesIa
 import com.soledad.app.apis.GestorApisAdmin
 import com.soledad.app.nucleo.ClienteModelo
 import com.soledad.app.nucleo.GestorApis
@@ -32,6 +33,8 @@ class IaConRagImpl(
     private val semantico: BuscadorSemantico? = null,
     /** Texto extra para el sistema: «Cómo contesto» y «Temas que no toco» de Mi información. */
     private val extraSistema: () -> String = { "" },
+    /** Aviso por clave (alias, ok, error) para el estado que muestra Ajustes. Nunca recibe la clave. */
+    private val alResultadoClave: (String, Boolean, String) -> Unit = { _, _, _ -> },
 ) : IaConRag {
 
     @Volatile private var indice: Indice? = null
@@ -83,30 +86,48 @@ class IaConRagImpl(
         val turnos = armarTurnos(chatId, texto, hallazgos, cfg)
         val errores = ArrayList<String>()
         var huboPermiso = false
+        // Respaldo en orden: cada clave del proveedor principal y después cada clave del respaldo.
+        // Ante cualquier falla (red, tiempo agotado, 401/403, 429, 5xx, respuesta vacía) se pasa a la siguiente clave.
         for ((proveedor, modelo) in candidatos) {
-            // Nada de red sin permiso: el gestor es el único que lleva la cuenta de los usos.
-            val permiso = apis().solicitar(proveedor)
-            if (permiso == null) { errores += "$proveedor: sin cupo o sin clave"; continue }
-            huboPermiso = true
-            var exito = false
-            try {
-                val r = modelos(proveedor).generar(permiso.clave, modelo, sistema, turnos, cfg.maxTokens, cfg.temperatura)
-                val limpio = r.texto?.let { limpiar(it) }
-                exito = !limpio.isNullOrBlank()
-                if (r.tokensEntrada > 0 || r.tokensSalida > 0) almacen.sumarTokens(dia(ahora()), r.tokensEntrada, r.tokensSalida)
-                if (!exito) { errores += "$proveedor: ${r.error ?: "respuesta vacía"}"; continue }
-                if (clave != null && cfg.cacheDias > 0) almacen.cachePoner(clave, limpio!!, ahora())
-                if (guardar) guardarTurnos(chatId, texto, limpio!!)
-                val nota = (if (hallazgos.isEmpty()) "IA_SIN_BASE" else "IA_RAG") + " · $proveedor"
-                return Respuesta(conEtiqueta(limpio!!, cfg), nota, r.tokensEntrada, r.tokensSalida)
-            } catch (e: Exception) {
-                errores += "$proveedor: ${e.message ?: e.javaClass.simpleName}"
-            } finally {
-                apis().confirmar(permiso, exito)
+            val probadas = HashSet<String>()
+            while (probadas.size < MAX_CLAVES_POR_PROVEEDOR) {
+                // Nada de red sin permiso: el gestor es el único que lleva la cuenta de los usos.
+                val permiso = apis().solicitar(proveedor, probadas)
+                if (permiso == null) { if (probadas.isEmpty()) errores += "$proveedor: sin cupo o sin clave"; break }
+                probadas += permiso.apiId
+                huboPermiso = true
+                var exito = false
+                try {
+                    val r = modelos(proveedor).generar(permiso.clave, modelo, sistema, turnos, cfg.maxTokens, cfg.temperatura)
+                    val limpio = r.texto?.let { limpiar(it) }
+                    exito = !limpio.isNullOrBlank()
+                    if (r.tokensEntrada > 0 || r.tokensSalida > 0) almacen.sumarTokens(dia(ahora()), r.tokensEntrada, r.tokensSalida)
+                    if (!exito) {
+                        val error = r.error ?: "respuesta vacía"
+                        errores += "${permiso.apiId}: $error"
+                        avisarClave(permiso.apiId, false, error)
+                        continue
+                    }
+                    avisarClave(permiso.apiId, true, "")
+                    if (clave != null && cfg.cacheDias > 0) almacen.cachePoner(clave, limpio!!, ahora())
+                    if (guardar) guardarTurnos(chatId, texto, limpio!!)
+                    val nota = (if (hallazgos.isEmpty()) "IA_SIN_BASE" else "IA_RAG") + " · ${permiso.apiId}"
+                    return Respuesta(conEtiqueta(limpio!!, cfg), nota, r.tokensEntrada, r.tokensSalida)
+                } catch (e: Exception) {
+                    val error = e.message ?: e.javaClass.simpleName
+                    errores += "${permiso.apiId}: $error"
+                    avisarClave(permiso.apiId, false, error)
+                } finally {
+                    apis().confirmar(permiso, exito)
+                }
             }
         }
         if (!huboPermiso) return Respuesta(null, "sin cupo de API")
         return Respuesta(null, "error modelo: " + errores.joinToString("; "))
+    }
+
+    private fun avisarClave(apiId: String, ok: Boolean, error: String) {
+        try { alResultadoClave(apiId, ok, error) } catch (_: Exception) { }
     }
 
     internal fun armarSistema(cfg: ConfigRag): String {
@@ -142,6 +163,8 @@ class IaConRagImpl(
 
     companion object {
         const val DIA_MS = 86_400_000L
+        /** Tope de claves a probar por proveedor en una misma respuesta. */
+        const val MAX_CLAVES_POR_PROVEEDOR = 10
         private const val MAX_TURNO = 600
         private const val MAX_NOTA = 700
         private const val MAX_RESPUESTA = 400
@@ -234,6 +257,7 @@ object FabricaRag {
             modelos = { p -> if (p == "gemini") gemini else nvidia },
             semantico = BuscadorSemantico(alm, nvidia) { (Servicios.apis as? GestorApisAdmin)?.claveSinContar("nvidia") },
             extraSistema = { MiInformacion.crear(ctx).instruccionesSistema() },
+            alResultadoClave = { id, ok, error -> ClavesIa.estado(ctx).anotar(id, ok, error) },
         )
     }.also { _motor = it }
 
