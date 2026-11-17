@@ -1,0 +1,30 @@
+
+# --- agregado para subida segura ---
+.env
+.env.*
+*.pem
+*.key
+*.keystore
+*.jks
+*.p12
+google-services.json
+serviceAccount*.json
+local.properties
+puente.conf
+datos_celular.json
+.gradle/
+.kotlin/
+build/
+.tools/
+.local/
+venv/
+.venv/
+node_modules/
+__pycache__/
+*.pyc
+*.apk
+*.aab
+*.log
+.idea/
+# respaldo de historia git heredada (no se sube)
+.git_heredado_respaldo/

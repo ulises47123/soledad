@@ -1,0 +1,4 @@
+# APIs de Soledad. El orden de la lista es el orden de uso dentro de cada proveedor.
+# `clave` es SIEMPRE una referencia ${NOMBRE}: el valor real se guarda cifrado (Android Keystore).
+# Las claves se cargan desde Ajustes (o, en la compilación de prueba, desde local.properties).
+apis: []

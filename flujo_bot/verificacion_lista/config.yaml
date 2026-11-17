@@ -1,0 +1,11 @@
+# Lista blanca de Soledad. La interfaz reescribe este archivo.
+interruptor_general: false      # apagada al instalar: no responde a nadie
+modo: permitidos                # SOLO la lista recibe respuesta
+grupos: false                   # los grupos nunca se responden (Soledad además lo fuerza en el código)
+horario:
+  activo: false
+  desde: "08:00"
+  hasta: "23:00"
+limite_respuestas_hora: 4
+bloqueadas: [dinero, plata, clave, contraseña, codigo, banco, tarjeta, transferencia, deposito, pin, cvv, cbu, alias]
+contactos: []

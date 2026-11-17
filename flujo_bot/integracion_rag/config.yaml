@@ -1,0 +1,17 @@
+# Integración RAG de Soledad: único paso con modelo. Cambiar aquí no requiere tocar código.
+proveedor: nvidia
+modelo: "nvidia/nemotron-3.5-super-vl-120b-a12b"
+proveedor_respaldo: gemini
+modelo_respaldo: "gemini-2.5-flash"
+modelo_embeddings: "nvidia/nemotron-3.5-embed-1b"   # vacío = solo índice BM25 local
+umbral_semantico: 0.2
+top_k: 3                # fragmentos de «Mi información» que viajan en el prompt
+puntaje_minimo: 1.0     # BM25; por debajo no cuenta como hallazgo
+max_tokens: 200
+historial: 4            # turnos previos del mismo chat (0 = ninguno)
+temperatura: 0.5
+personalidad: "Respondés los mensajes de WhatsApp del dueño de este teléfono mientras no está. Escribís en español, en primera persona, como lo haría él, cálido y breve."
+etiqueta_activa: false  # la etiqueta «(respuesta automática)» la pone Soledad según Ajustes
+etiqueta: "(respuesta automática)"
+cache_dias: 0           # 0 = sin caché (cada chat tiene su contexto)
+permitir_sin_base: true # sin datos en la base igual responde, sin inventar
