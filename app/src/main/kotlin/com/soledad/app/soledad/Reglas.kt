@@ -32,6 +32,10 @@ data class ConfigSoledad(
     val usarCalendario: Boolean = true,
     /** Le pasa a la IA tus tareas pendientes de My Brain. */
     val usarTareas: Boolean = true,
+    /** Busca en las notas de Mi cerebro lo que venga al caso con cada pregunta. */
+    val usarNotas: Boolean = true,
+    /** Modo negocio: a quien no está agendado le contesta como el emprendimiento, con los datos de «Mi negocio». */
+    val modoNegocio: Boolean = false,
     val timeoutVerificacionMs: Long = 20_000,
 ) {
     companion object {
@@ -43,17 +47,28 @@ data class ConfigSoledad(
 object Azar {
     /** Los únicos intervalos base: 20 min, 50 min y 2 h. */
     val INTERVALOS_MIN = listOf(20, 50, 120)
+
+    /** «Cada 1 minuto»: opcional, para estar casi en vivo. No lleva variación y no entra a WhatsApp en cada vuelta. */
+    const val INTERVALO_RAPIDO_MIN = 1
+    val INTERVALOS_PERMITIDOS = listOf(INTERVALO_RAPIDO_MIN) + INTERVALOS_MIN
+
+    /** Con revisiones cada minuto, «entrar un momento a WhatsApp» se hace como mucho una vez cada tanto. */
+    const val PAUSA_VISITA_RAPIDA_MS = 20 * 60_000L
+
+    fun rapido(cfg: ConfigSoledad) = INTERVALO_RAPIDO_MIN in intervalosValidos(cfg.intervalosMin)
     private const val MIN_MS = 60_000L
 
     /** Variación permitida: 0 a 10 minutos. */
     fun variacionValida(v: Int) = v.coerceIn(0, 10)
 
-    /** Intervalos válidos elegidos por el usuario (subconjunto de 20/50/120). Si queda vacío, se usan los tres. */
-    fun intervalosValidos(l: List<Int>): List<Int> = l.filter { it in INTERVALOS_MIN }.distinct().ifEmpty { INTERVALOS_MIN }
+    /** Intervalos válidos elegidos por el usuario (subconjunto de 1/20/50/120). Si queda vacío, se usan los tres. */
+    fun intervalosValidos(l: List<Int>): List<Int> = l.filter { it in INTERVALOS_PERMITIDOS }.distinct().ifEmpty { INTERVALOS_MIN }
 
     /** Próximo intervalo en ms: uno de los intervalos al azar, ± variación al azar (nunca menos de 5 min). */
     fun proximoIntervaloMs(rnd: Random, cfg: ConfigSoledad): Long {
-        val base = intervalosValidos(cfg.intervalosMin).random(rnd) * MIN_MS
+        val elegido = intervalosValidos(cfg.intervalosMin).random(rnd)
+        if (elegido == INTERVALO_RAPIDO_MIN) return MIN_MS
+        val base = elegido * MIN_MS
         val v = variacionValida(cfg.variacionMin) * MIN_MS
         val jitter = if (v == 0L) 0L else rnd.nextLong(-v, v + 1)
         return maxOf(5 * MIN_MS, base + jitter)

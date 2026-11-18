@@ -28,3 +28,6 @@ __pycache__/
 .idea/
 # respaldo de historia git heredada (no se sube)
 .git_heredado_respaldo/
+
+# respaldo local de la lista blanca (nombres de contactos)
+.respaldo_lista/

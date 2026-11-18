@@ -1,9 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Versión de un color para íconos temáticos: cabeza con ojos huecos + globito. -->
+<!-- Versión de un color para íconos temáticos: globo con la luna calada. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
     <path android:fillColor="#000000" android:fillType="evenOdd"
-        android:pathData="M42,44H50A16,16 0,0 1,66 60V66A16,16 0,0 1,50 82H42A16,16 0,0 1,26 66V60A16,16 0,0 1,42 44Z M38,62m-5,0a5,5 0,1 0,10 0a5,5 0,1 0,-10 0 M54,63m-3.6,0a3.6,3.6 0,1 0,7.2 0a3.6,3.6 0,1 0,-7.2 0" />
-    <path android:fillColor="#000000"
-        android:pathData="M64,29H74A6,6 0,0 1,80 35V40A6,6 0,0 1,74 46H67L60.5,51L62,45.6A6,6 0,0 1,58 40V35A6,6 0,0 1,64 29Z" />
+        android:pathData="M41,30H67A14,14 0,0 1,81 44V56A14,14 0,0 1,67 70H51L36,81L39.5,69.9A14,14 0,0 1,27 56V44A14,14 0,0 1,41 30Z M52.8,38.06A12,12 0,1 0,65.53 53.33A10,10 0,0 1,52.8 38.06Z" />
 </vector>

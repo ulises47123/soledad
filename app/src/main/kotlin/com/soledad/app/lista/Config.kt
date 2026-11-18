@@ -16,7 +16,7 @@ data class ConfigLista(
     val desde: String = "08:00",
     val hasta: String = "22:00",
     val bloqueadas: List<String> = listOf("dinero", "plata", "clave", "contraseña", "codigo", "banco", "tarjeta", "transferencia", "deposito", "pin", "cvv", "cbu", "alias"),
-    val limiteRespuestasHora: Int = 4,
+    val limiteRespuestasHora: Int = 10,
     val contactos: List<Contacto> = emptyList(),
 ) {
     companion object {

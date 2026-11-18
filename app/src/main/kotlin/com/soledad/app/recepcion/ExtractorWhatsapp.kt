@@ -24,6 +24,11 @@ object ExtractorWhatsapp {
      */
     fun jidDelCanal(canalId: String?): String? = canalId?.let { JID_EN_CANAL.find(it.trim())?.groupValues?.get(1) }
 
+    private val PROPIOS = setOf("tú", "tu", "you")
+
+    /** Sin remitente, o «Tú»/«You»: lo escribió el dueño del teléfono (o Soledad). */
+    fun propio(remitente: String?): Boolean = remitente.isNullOrBlank() || remitente.trim().lowercase() in PROPIOS
+
     fun idEstable(chatId: String, hora: Long, texto: String): String {
         val h = MessageDigest.getInstance("SHA-256").digest("$chatId|$hora|$texto".toByteArray(Charsets.UTF_8))
         return h.take(16).joinToString("") { "%02x".format(it) }
@@ -49,7 +54,7 @@ object ExtractorWhatsapp {
         val nombre = tituloConversacion ?: titulo
         val chatId = jidDelCanal(canalId) ?: shortcutId?.takeIf { it.isNotBlank() } ?: nombre
         val mensajes = crudos
-            .filter { it.texto.isNotBlank() && !it.remitente.isNullOrBlank() && ahora - it.hora <= edadMaximaMs }
+            .filter { it.texto.isNotBlank() && !propio(it.remitente) && ahora - it.hora <= edadMaximaMs }
             .map {
                 val t = it.texto.trim()
                 Mensaje(idEstable(chatId, it.hora, t), chatId, nombre, t, grupo, it.hora, paquete)
@@ -74,7 +79,10 @@ object ExtractorWhatsapp {
         canalId: String?,
         edadMaximaMs: Long,
     ): Extraccion {
-        val base = extraer(paquete, titulo, tituloConversacion, esGrupoExtra, shortcutId, crudos, ahora, canalId, edadMaximaMs)
+        // Lo anterior al último mensaje propio ya fue contestado (por vos o por Soledad): no vuelve a la IA.
+        val ultimoPropio = crudos.filter { propio(it.remitente) }.maxOfOrNull { it.hora }
+        val sinContestar = if (ultimoPropio == null) crudos else crudos.filter { it.hora > ultimoPropio }
+        val base = extraer(paquete, titulo, tituloConversacion, esGrupoExtra, shortcutId, sinContestar, ahora, canalId, edadMaximaMs)
         if (base.mensajes.size <= 1) return base
         val ordenados = base.mensajes.sortedBy { it.recibidoMs }
         val unico = ordenados.last().copy(texto = ordenados.joinToString("\n") { it.texto })

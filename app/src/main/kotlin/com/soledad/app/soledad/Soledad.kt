@@ -58,6 +58,8 @@ class AjustesSoledad(ctx: Context) {
             desbloquear = p.getBoolean("desbloquear", d.desbloquear),
             usarCalendario = p.getBoolean("usar_calendario", d.usarCalendario),
             usarTareas = p.getBoolean("usar_tareas", d.usarTareas),
+            usarNotas = p.getBoolean("usar_notas", d.usarNotas),
+            modoNegocio = p.getBoolean("modo_negocio", d.modoNegocio),
         )
     }
 
@@ -78,6 +80,8 @@ class AjustesSoledad(ctx: Context) {
             .putBoolean("desbloquear", c.desbloquear)
             .putBoolean("usar_calendario", c.usarCalendario)
             .putBoolean("usar_tareas", c.usarTareas)
+            .putBoolean("usar_notas", c.usarNotas)
+            .putBoolean("modo_negocio", c.modoNegocio)
             .apply()
     }
 
@@ -236,10 +240,11 @@ object Soledad {
      * Prueba interna: un mensaje SIMULADO pasa por la misma IA (RAG + NVIDIA, respaldo Gemini) y la respuesta queda en el
      * Registro. No se envía a nadie ni toca chats ni historial. Bloquea: llamar fuera del hilo principal.
      */
-    fun simular(ctx: Context, texto: String): String {
+    fun simular(ctx: Context, texto: String, perfil: com.soledad.app.lista.Perfil = com.soledad.app.lista.Perfil.PERSONAL): String {
         val cfg = ajustes.leer()
-        val r = FabricaRag.motor(ctx).simular(texto)
-        val respuesta = r.texto?.let { Etiqueta.aplicar(it, cfg) }
+        val r = FabricaRag.motor(ctx).simular(texto, perfil)
+        val negocio = perfil == com.soledad.app.lista.Perfil.NEGOCIO
+        val respuesta = r.texto?.let { Etiqueta.aplicar(it, if (negocio) cfg.copy(etiquetaActiva = true) else cfg) }
         val detalle = if (respuesta != null) "Mensaje simulado «$texto». Habría respondido: «$respuesta» (${r.nota}). No se envió."
         else "Mensaje simulado «$texto». La IA no respondió: ${r.nota}."
         try { Servicios.registro.anotar(null, Etapa.PRUEBA, detalle) } catch (_: Throwable) { }
@@ -247,7 +252,7 @@ object Soledad {
     }
 
     private val alLlegarHilo = Executors.newSingleThreadExecutor()
-    @Volatile private var ultimoAviso = 0L
+    private val corridaEnEspera = java.util.concurrent.atomic.AtomicBoolean(false)
 
     /**
      * Llegó una notificación de WhatsApp (la llama la escucha): detecta y programa la respuesta.
@@ -255,10 +260,11 @@ object Soledad {
      * Funciona con el teléfono bloqueado: lee la notificación y contesta por su botón «Responder».
      */
     fun alLlegar(ctx: Context) {
-        val ahora = System.currentTimeMillis()
-        if (ahora - ultimoAviso < 1_500) return // ráfaga de repintados de la misma notificación
-        ultimoAviso = ahora
+        // Una ráfaga de repintados de la misma notificación deja UNA sola corrida en espera; las que llegan mientras otra
+        // ya está trabajando encargan una más (antes se descartaban y el mensaje esperaba hasta la próxima revisión).
+        if (!corridaEnEspera.compareAndSet(false, true)) return
         alLlegarHilo.execute {
+            corridaEnEspera.set(false)
             val wl = ctx.getSystemService(PowerManager::class.java).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "soledad:al_llegar")
             wl.acquire(4 * 60_000L)
             try {

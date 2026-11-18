@@ -24,12 +24,12 @@ object FormatoAgenda {
     const val MAX_EVENTOS = 15
     const val MAX_TAREAS = 12
     private const val MAX_TITULO = 80
-    private val DIAS = arrayOf("domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado")
+    internal val DIAS = arrayOf("domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado")
 
     fun texto(eventos: List<Evento>, tareas: List<Tarea>?, ahora: Long, zona: TimeZone = TimeZone.getDefault()): String {
         val sb = StringBuilder()
         sb.append("Ahora es ").append(dia(ahora, ahora, zona)).append(' ').append(hora(ahora, zona)).append(".\n")
-        val proximos = eventos.filter { it.finMs > ahora }.sortedBy { it.inicioMs }.take(MAX_EVENTOS)
+        val proximos = eventos.filter { it.finMs > ahora && it.inicioMs < ahora + 7 * 86_400_000L }.sortedBy { it.inicioMs }.take(MAX_EVENTOS)
         sb.append("Eventos de los próximos 7 días:")
         if (proximos.isEmpty()) sb.append(" ninguno.\n") else {
             sb.append('\n')
@@ -66,7 +66,7 @@ object FormatoAgenda {
         return sb.toString().trimEnd()
     }
 
-    private fun titulo(t: String): String {
+    internal fun titulo(t: String): String {
         val limpio = t.replace(Regex("\\s+"), " ").trim().ifEmpty { "(sin título)" }
         return if (limpio.length <= MAX_TITULO) limpio else limpio.take(MAX_TITULO).trimEnd() + "…"
     }
@@ -102,6 +102,7 @@ object FormatoAgenda {
 object MiAgenda {
     private const val TAG = "SoledadAgenda"
     private const val DIAS_ADELANTE = 7
+    private const val DIAS_BUSQUEDA = 366L
     /** Permiso de firma que define My Brain (solo lo obtienen apps firmadas con la misma clave). */
     const val PERMISO_TAREAS = "com.mhss.app.mybrain.permission.LEER_TAREAS"
     /** Primero la versión que compilamos nosotros (debug) y después la normal. */
@@ -112,11 +113,12 @@ object MiAgenda {
 
     fun tareasPermitidas(ctx: Context) = ctx.checkSelfPermission(PERMISO_TAREAS) == PackageManager.PERMISSION_GRANTED
 
-    fun eventos(ctx: Context, ahora: Long = System.currentTimeMillis()): List<Evento> {
+    /** `hastaMs`: para mirar más allá de los 7 días cuando preguntan por una fecha lejana. */
+    fun eventos(ctx: Context, ahora: Long = System.currentTimeMillis(), hastaMs: Long = 0L): List<Evento> {
         if (!calendarioPermitido(ctx)) return emptyList()
         // Desde el comienzo del día (eventos de todo el día de hoy) hasta 7 días adelante.
         val desde = ahora - 86_400_000L
-        val hasta = ahora + DIAS_ADELANTE * 86_400_000L
+        val hasta = maxOf(ahora + DIAS_ADELANTE * 86_400_000L, hastaMs)
         val uri = CalendarContract.Instances.CONTENT_URI.buildUpon().also {
             ContentUris.appendId(it, desde); ContentUris.appendId(it, hasta)
         }.build()
@@ -172,15 +174,65 @@ object MiAgenda {
         return null
     }
 
-    /** Texto para la IA según los ajustes ("" si no hay nada que pasarle). */
-    fun textoParaIa(ctx: Context, usarCalendario: Boolean, usarTareas: Boolean, ahora: Long = System.currentTimeMillis()): String {
+    /** Notas de Mi cerebro, o null si no está instalado, no da permiso o es una versión que todavía no las comparte. */
+    fun notas(ctx: Context): List<NotaCerebro>? {
+        if (!tareasPermitidas(ctx)) return null
+        for (paquete in PAQUETES_MYBRAIN) {
+            try {
+                val c = ctx.contentResolver.query(Uri.parse("content://$paquete.tareas/notas"), null, null, null, null) ?: continue
+                c.use {
+                    // Una versión vieja de Mi cerebro contesta con las tareas: se reconoce porque no trae «contenido».
+                    val iC = it.getColumnIndex("contenido")
+                    if (iC < 0) return null
+                    val iT = it.getColumnIndexOrThrow("titulo")
+                    val iF = it.getColumnIndexOrThrow("carpeta")
+                    val iM = it.getColumnIndexOrThrow("modificada")
+                    val lista = ArrayList<NotaCerebro>()
+                    while (it.moveToNext()) {
+                        lista += NotaCerebro(it.getString(iT).orEmpty(), it.getString(iC).orEmpty(), if (it.isNull(iF)) null else it.getString(iF), it.getLong(iM))
+                    }
+                    return lista
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "notas de $paquete: ${e.javaClass.simpleName}")
+            }
+        }
+        return null
+    }
+
+    /**
+     * Texto para la IA según los ajustes ("" si no hay nada que pasarle). Según lo que pregunten trae primero:
+     * las notas de Mi cerebro que vienen al caso, el evento que nombran («el cumple de Ana») y el bloque
+     * «TE PREGUNTAN POR» con lo que hay en ese horario y los ratos libres.
+     */
+    fun textoParaIa(
+        ctx: Context, usarCalendario: Boolean, usarTareas: Boolean, pregunta: String = "", ahora: Long = System.currentTimeMillis(),
+        usarNotas: Boolean = false,
+    ): String {
+        val deNotas = if (usarNotas && pregunta.isNotBlank()) {
+            try { NotasCerebro.texto(NotasCerebro.elegir(pregunta, notas(ctx).orEmpty()), pregunta) } catch (e: Exception) { "" }
+        } else ""
+        val resto = agendaParaIa(ctx, usarCalendario, usarTareas, pregunta, ahora)
+        return listOf(deNotas, resto).filter { it.isNotEmpty() }.joinToString("\n\n")
+    }
+
+    private fun agendaParaIa(ctx: Context, usarCalendario: Boolean, usarTareas: Boolean, pregunta: String, ahora: Long): String {
         if (!usarCalendario && !usarTareas) return ""
-        val ev = if (usarCalendario && calendarioPermitido(ctx)) eventos(ctx, ahora) else null
+        val ventana = if (pregunta.isBlank()) null else try { LectorFecha.ventana(pregunta, ahora) } catch (e: Exception) { null }
+        val ev = if (usarCalendario && calendarioPermitido(ctx)) eventos(ctx, ahora, ventana?.finMs ?: 0L) else null
         val ta = if (usarTareas) tareas(ctx) else null
         if (ev == null && ta == null) return ""
-        return FormatoAgenda.texto(ev.orEmpty(), ta, ahora).let {
+        val general = FormatoAgenda.texto(ev.orEmpty(), ta, ahora).let {
             // Si no se puede leer el calendario, no decir «ningún evento»: sería falso.
             if (ev == null) it.replace(Regex("Eventos de los próximos 7 días:[^\n]*\n?"), "") else it
         }
+        // Sin calendario no se puede afirmar que un horario está libre.
+        val consulta = if (ventana != null && ev != null) Choques.texto(ventana, ev, ta, ahora) + "\n\n" else ""
+        // «¿Cuándo es el cumple de Ana?»: se busca por nombre en todo el año que viene.
+        val porNombre = if (ev != null && pregunta.isNotBlank() && Coincidencias.palabras(pregunta).isNotEmpty()) {
+            val anual = try { eventos(ctx, ahora, ahora + DIAS_BUSQUEDA * 86_400_000L) } catch (e: Exception) { emptyList() }
+            Coincidencias.texto(Coincidencias.elegir(pregunta, anual, ahora), ahora).let { if (it.isEmpty()) "" else it + "\n\n" }
+        } else ""
+        return porNombre + consulta + general
     }
 }

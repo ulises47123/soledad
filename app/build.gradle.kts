@@ -24,8 +24,8 @@ android {
         applicationId = "com.soledad.app"
         minSdk = 30
         targetSdk = 35
-        versionCode = 4
-        versionName = "1.3"
+        versionCode = 5
+        versionName = "1.4"
         buildConfigField("String", "NVIDIA_API_KEY", "\"${local("NVIDIA_API_KEY")}\"")
         buildConfigField("String", "NVIDIA_API_KEYS", "\"${local("NVIDIA_API_KEYS")}\"")
         buildConfigField("String", "GEMINI_API_KEYS", "\"${local("GEMINI_API_KEYS")}\"")

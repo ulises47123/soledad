@@ -24,7 +24,7 @@ import com.soledad.app.ui.Ui.agregar
 
 /**
  * Lista blanca: Soledad responde SOLO a estos nombres. La acción principal es elegir de la agenda del teléfono
- * (el nombre agendado es el que WhatsApp muestra en la notificación). Escribir a mano queda como alternativa.
+ * (el nombre agendado es el que WhatsApp muestra en la notificación).
  */
 class PantallaLista(h: Anfitrion) : Pantalla(h) {
     override val titulo = Textos.P_LISTA
@@ -62,20 +62,6 @@ class PantallaLista(h: Anfitrion) : Pantalla(h) {
         if (cfg.contactos.isEmpty()) col.agregar(Ui.aviso(a, null, Textos.CONTACTOS_VACIO, Nivel.AVISO), Ui.ESP_DENTRO)
         cfg.contactos.forEach { c -> col.agregar(filaContacto(a, c), Ui.ESP_DENTRO) }
 
-        // Alternativa secundaria: a mano (para nombres que WhatsApp muestra distinto que la agenda).
-        col.agregar(Ui.seccion(a, Textos.A_MANO_TITULO), Ui.ESP_GRUPO)
-        col.agregar(Ui.nota(a, Textos.A_MANO_NOTA), Ui.ESP_DENTRO)
-        val campo = Ui.campo(a, Textos.CAMPO_NOMBRE, Textos.CAMPO_NOMBRE_EJ,
-            tipo = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_WORDS or InputType.TYPE_TEXT_VARIATION_PERSON_NAME)
-        col.agregar(campo.vista, Ui.ESP_DENTRO)
-        col.agregar(Ui.boton(a, Textos.AGREGAR_A_MANO, Ui.Estilo.SECUNDARIO) {
-            val n = campo.texto.trim()
-            if (campo.fallo(Validar.nombreContacto(n, lista.listar().map { it.nombre }))) return@boton
-            lista.agregarNombres(listOf(n))
-            campo.edit.setText("")
-            h.avisar(Textos.contactoAgregado(n))
-            h.refrescar()
-        }, Ui.ESP_DENTRO)
         return col
     }
 

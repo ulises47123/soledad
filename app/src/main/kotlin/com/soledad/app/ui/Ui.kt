@@ -32,16 +32,16 @@ object Ui {
     var p: Paleta = Paletas.SOLEDAD
 
     // Escala tipográfica (sp, sigue el tamaño de letra del sistema). Piso: 14sp para texto legible.
-    const val T_TITULO = 22f
-    const val T_SECCION = 15f
+    const val T_TITULO = 24f
+    const val T_SECCION = 13f
     const val T_CUERPO = 16f
     const val T_NOTA = 14f
 
     const val ESP_DENTRO = 8
     const val ESP_GRUPO = 24
     const val MARGEN = 16
-    const val RADIO_CONTROL = 8
-    const val PAD_TARJETA = 12
+    const val RADIO_CONTROL = 14
+    const val PAD_TARJETA = 16
     const val RADIO_TARJETA = RADIO_CONTROL + PAD_TARJETA
     const val MIN_TOQUE = 48
 
@@ -60,9 +60,10 @@ object Ui {
         }
     }
 
-    private fun mono(negrita: Boolean) = Typeface.create(Typeface.MONOSPACE, if (negrita) Typeface.BOLD else Typeface.NORMAL)
+    /** Letra de títulos y controles: la del sistema en peso medio (antes era monoespaciada). */
+    private fun mono(negrita: Boolean) = Typeface.create(if (negrita) "sans-serif-medium" else "sans-serif", Typeface.NORMAL)
 
-    private fun mezclar(a: Int, b: Int, t: Float): Int {
+    internal fun mezclar(a: Int, b: Int, t: Float): Int {
         fun m(x: Int, y: Int) = (x + (y - x) * t).toInt()
         return Color.rgb(m(Color.red(a), Color.red(b)), m(Color.green(a), Color.green(b)), m(Color.blue(a), Color.blue(b)))
     }
@@ -80,13 +81,35 @@ object Ui {
 
     fun nota(ctx: Context, t: String) = texto(ctx, t, T_NOTA, p.tenue)
 
-    fun tituloPantalla(ctx: Context, t: String) = texto(ctx, t, T_TITULO, p.acento, mono = true, negrita = true).apply {
+    fun tituloPantalla(ctx: Context, t: String) = texto(ctx, t, T_TITULO, p.texto, negrita = true).apply {
         isAccessibilityHeading = true
     }
 
     /** Título de sección. Es un encabezado para los lectores de pantalla (se navega de uno en uno). */
-    fun seccion(ctx: Context, t: String) = texto(ctx, t, T_SECCION, p.acento, mono = true, negrita = true).apply {
+    fun seccion(ctx: Context, t: String) = texto(ctx, t.uppercase(), T_SECCION, p.acento, mono = true, negrita = true).apply {
         isAccessibilityHeading = true
+        letterSpacing = 0.08f
+        contentDescription = t
+        setPadding(dp(ctx, 4), 0, 0, 0)
+    }
+
+    /** Pastilla de estado: símbolo + palabra sobre un fondo teñido con su color. */
+    fun chip(ctx: Context, t: String, color: Int) = texto(ctx, t, T_NOTA, color, mono = true, negrita = true).apply {
+        setPadding(dp(ctx, 12), dp(ctx, 6), dp(ctx, 12), dp(ctx, 6))
+        background = GradientDrawable().apply {
+            setColor(mezclar(p.superficie, color, 0.16f))
+            cornerRadius = dp(ctx, 100).toFloat()
+        }
+    }
+
+    /** Ícono dentro de un círculo teñido con el acento (decorativo). */
+    fun icono(ctx: Context, recurso: Int, color: Int = p.acento) = android.widget.ImageView(ctx).apply {
+        setImageResource(recurso)
+        imageTintList = ColorStateList.valueOf(color)
+        val r = dp(ctx, 9)
+        setPadding(r, r, r, r)
+        background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(mezclar(p.superficie, color, 0.18f)) }
+        importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
     }
 
     // ---------- Contenedores ----------
@@ -133,6 +156,7 @@ object Ui {
             isAllCaps = false
             textSize = 15f
             typeface = mono(true)
+            letterSpacing = 0.01f
             minHeight = dp(ctx, MIN_TOQUE)
             minimumHeight = dp(ctx, MIN_TOQUE)
             minWidth = dp(ctx, MIN_TOQUE)
@@ -141,7 +165,7 @@ object Ui {
             stateListAnimator = null
             when (estilo) {
                 Estilo.PRIMARIO -> { setTextColor(p.sobreAcento); background = fondo(ctx, p.acento, p.acento) }
-                Estilo.SECUNDARIO -> { setTextColor(p.acento); background = fondo(ctx, p.superficie, p.borde) }
+                Estilo.SECUNDARIO -> { setTextColor(p.acento); background = fondo(ctx, mezclar(p.superficie, p.acento, 0.10f), mezclar(p.superficie, p.acento, 0.10f)) }
                 Estilo.PELIGRO -> { setTextColor(p.peligro); background = fondo(ctx, p.superficie, p.peligro) }
             }
             if (descripcion != null) contentDescription = descripcion
@@ -149,19 +173,20 @@ object Ui {
         }
 
     /** Fila navegable: título, detalle y una flecha decorativa. Toda la fila es el objetivo. */
-    fun filaNav(ctx: Context, titulo: String, detalle: String, accion: () -> Unit) = LinearLayout(ctx).apply {
+    fun filaNav(ctx: Context, titulo: String, detalle: String, icono: Int = 0, accion: () -> Unit) = LinearLayout(ctx).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
-        minimumHeight = dp(ctx, 56)
-        setPadding(dp(ctx, PAD_TARJETA), dp(ctx, PAD_TARJETA), dp(ctx, PAD_TARJETA), dp(ctx, PAD_TARJETA))
-        background = fondo(ctx, p.superficie, p.borde)
+        minimumHeight = dp(ctx, 64)
+        setPadding(dp(ctx, PAD_TARJETA), dp(ctx, 12), dp(ctx, PAD_TARJETA), dp(ctx, 12))
+        background = fondo(ctx, p.superficie, p.superficie, RADIO_TARJETA)
         isFocusable = true
         isClickable = true
+        if (icono != 0) addView(icono(ctx, icono), LinearLayout.LayoutParams(dp(ctx, 42), dp(ctx, 42)).apply { marginEnd = dp(ctx, 14) })
         val col = columna(ctx)
         col.addView(texto(ctx, titulo, T_CUERPO, p.texto, mono = true, negrita = true))
         col.addView(nota(ctx, detalle))
         addView(col, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        addView(texto(ctx, "›", 24f, p.acento, mono = true).apply { importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO })
+        addView(texto(ctx, "›", 24f, p.tenue, mono = true).apply { importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO })
         setOnClickListener { accion() }
     }
 

@@ -3,11 +3,14 @@ package com.soledad.app.ui
 import android.app.Activity
 import android.content.Intent
 import android.net.Uri
+import android.content.res.ColorStateList
+import android.graphics.drawable.GradientDrawable
 import android.provider.Settings
 import android.view.Gravity
 import android.view.View
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.Switch
 import com.soledad.app.Administracion
 import com.soledad.app.R
 import com.soledad.app.rag.MiInformacion
@@ -36,73 +39,53 @@ class PantallaInicio(h: Anfitrion) : Pantalla(h) {
         val cfg = Soledad.ajustes.leer()
         val items = Semaforo.evaluar(Datos.entradaSemaforo(a))
 
-        // 1. Cabecera con el ícono y el interruptor general.
-        val cabecera = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        cabecera.addView(ImageView(a).apply {
-            setImageResource(R.mipmap.ic_launcher)
-            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-        }, LinearLayout.LayoutParams(Ui.dp(a, 56), Ui.dp(a, 56)))
-        cabecera.addView(Ui.texto(a, Textos.LEMA, Ui.T_CUERPO, Ui.p.tenue).apply {
-            setPadding(Ui.dp(a, 12), 0, 0, 0)
-        }, LinearLayout.LayoutParams(0, -2, 1f))
-        col.agregar(cabecera)
+        // 1. Tarjeta principal: ícono, estado en grande y el interruptor general.
+        col.agregar(principal(a, encendida, cfgLista.contactos.isEmpty(), items, cfg.modoNegocio))
 
-        col.agregar(Ui.interruptor(a, Textos.INTERRUPTOR_TITULO, encendida, { if (it) Textos.INTERRUPTOR_ON else Textos.INTERRUPTOR_OFF }) { v ->
-            if (v) {
-                if (Semaforo.bloqueantes(items) > 0) {
-                    h.avisar(Textos.FALTA_PARA_ENCENDER, error = true)
-                    h.refrescar()
-                    return@interruptor
-                }
-                Soledad.activar(a)
-                h.avisar(if (cfgLista.contactos.isEmpty()) Textos.LISTA_VACIA_AVISO else Textos.ENCENDIDA_AVISO, cfgLista.contactos.isEmpty())
-            } else {
-                Soledad.desactivar(a)
-                h.avisar(Textos.APAGADA_AVISO)
-            }
-            h.refrescar()
-        }, Ui.ESP_GRUPO)
-
-        // 2. Estado.
-        col.agregar(Ui.seccion(a, Textos.ESTADO_TITULO), Ui.ESP_GRUPO)
-        val tarjeta = Ui.tarjeta(a)
-        val nivel = if (encendida) Nivel.LISTO else Nivel.AVISO
-        tarjeta.agregar(Ui.texto(a, "${Semaforo.simbolo(nivel)} ${if (encendida) Textos.ESTADO_ENCENDIDA else Textos.ESTADO_APAGADA}",
-            Ui.T_CUERPO, Ui.colorDe(nivel), mono = true, negrita = true))
+        // 2. Estado en pastillas y datos.
         val nivelModo = if (cfg.modoPrueba) Nivel.AVISO else Nivel.LISTO
-        tarjeta.agregar(Ui.texto(a, "${Semaforo.simbolo(nivelModo)} ${if (cfg.modoPrueba) Textos.MODO_PRUEBA_CHIP else Textos.MODO_REAL_CHIP}",
-            Ui.T_NOTA, Ui.colorDe(nivelModo), negrita = true), Ui.ESP_DENTRO / 2)
-
-        tarjeta.agregar(Ui.texto(a, Textos.respondeA(cfg.responderATodos, cfgLista.contactos.size), Ui.T_NOTA, Ui.p.texto, negrita = true),
-            Ui.ESP_DENTRO / 2)
+        val chips = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL }
+        chips.addView(Ui.chip(a, "${Semaforo.simbolo(nivelModo)} ${if (cfg.modoPrueba) Textos.MODO_PRUEBA_CHIP else Textos.MODO_REAL_CHIP}", Ui.colorDe(nivelModo)),
+            LinearLayout.LayoutParams(-2, -2))
+        chips.addView(Ui.chip(a, Textos.respondeA(cfg.responderATodos, cfgLista.contactos.size), Ui.p.acento),
+            LinearLayout.LayoutParams(-2, -2).apply { topMargin = Ui.dp(a, Ui.ESP_DENTRO) })
+        if (cfg.modoNegocio) chips.addView(Ui.chip(a, Textos.NEGOCIO_CHIP, Ui.p.aviso),
+            LinearLayout.LayoutParams(-2, -2).apply { topMargin = Ui.dp(a, Ui.ESP_DENTRO) })
+        col.agregar(chips, Ui.ESP_DENTRO * 2)
 
         val ahora = System.currentTimeMillis()
         val prox = Soledad.estado.proximoChequeoMs
-        tarjeta.agregar(dato(a, Textos.PROXIMA_REVISION,
-            if (encendida && prox > 0) "${formatoHora(prox)} (${relativo(ahora, prox)})" else Textos.SIN_PROXIMA), Ui.ESP_DENTRO * 2)
+        val fila = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL }
+        fila.addView(dato(a, Textos.PROXIMA_REVISION,
+            if (encendida && prox > 0) formatoHora(prox) else "—",
+            if (encendida && prox > 0) relativo(ahora, prox) else Textos.SIN_PROXIMA),
+            LinearLayout.LayoutParams(0, -1, 1f).apply { marginEnd = Ui.dp(a, Ui.ESP_DENTRO) })
+        fila.addView(dato(a, Textos.PROGRAMADAS, Datos.programadas().size.toString(), Textos.PROGRAMADAS_NOTA), LinearLayout.LayoutParams(0, -1, 1f))
+        col.agregar(fila, Ui.ESP_DENTRO * 2)
         val ult = Soledad.estado.ultimoChequeoMs
-        tarjeta.agregar(dato(a, Textos.ULTIMO_RESULTADO,
-            if (ult > 0) "${formatoFecha(ult)} · ${Soledad.estado.ultimoResultado}" else Textos.SIN_RESULTADO), Ui.ESP_DENTRO)
-        tarjeta.agregar(dato(a, Textos.PROGRAMADAS, Datos.programadas().size.toString()), Ui.ESP_DENTRO)
-        col.agregar(tarjeta, Ui.ESP_DENTRO)
-
-        // 3. Lo que necesita (solo lo pendiente, con su acción; lo listo se resume en una línea).
-        col.agregar(Ui.seccion(a, Textos.SEMAFORO_TITULO), Ui.ESP_GRUPO)
-        col.agregar(Ui.texto(a, Semaforo.resumen(items), Ui.T_CUERPO, Ui.p.texto).apply {
-            accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
+        col.agregar(Ui.tarjeta(a).apply {
+            agregar(Ui.texto(a, Textos.ULTIMO_RESULTADO, Ui.T_NOTA, Ui.p.tenue, mono = true, negrita = true))
+            agregar(Ui.texto(a, if (ult > 0) "${formatoFecha(ult)} · ${Soledad.estado.ultimoResultado}" else Textos.SIN_RESULTADO,
+                Ui.T_CUERPO, Ui.p.texto).apply { setTextIsSelectable(true) }, 2)
         }, Ui.ESP_DENTRO)
-        items.filter { it.nivel != Nivel.LISTO }.forEach { col.agregar(filaSemaforo(a, it), Ui.ESP_DENTRO) }
-        items.filter { it.nivel == Nivel.LISTO }.takeIf { it.isNotEmpty() }?.let { listos ->
-            col.agregar(Ui.nota(a, "${Textos.SIMBOLO_LISTO} " + listos.joinToString(" · ") { it.titulo }), Ui.ESP_DENTRO)
+
+        // 3. Lo que necesita: solo aparece si falta algo.
+        if (Semaforo.pendientes(items) > 0) {
+            col.agregar(Ui.seccion(a, Textos.SEMAFORO_TITULO + " · " + Semaforo.resumen(items)), Ui.ESP_GRUPO)
+            items.filter { it.nivel != Nivel.LISTO }.forEach { col.agregar(filaSemaforo(a, it), Ui.ESP_DENTRO) }
         }
 
         // 4. Pantallas.
         col.agregar(Ui.seccion(a, Textos.IR_A), Ui.ESP_GRUPO)
         val info = try { MiInformacion.crear(a).completas() } catch (e: Exception) { 0 }
-        col.agregar(Ui.filaNav(a, Textos.P_LISTA, Textos.dListaCon(cfgLista.contactos.size)) { h.abrir(PantallaLista(h)) }, Ui.ESP_DENTRO)
-        col.agregar(Ui.filaNav(a, Textos.P_INFO, Textos.dInfoCon(info, MiInformacion.SECCIONES.size)) { h.abrir(PantallaMiInfo(h)) }, Ui.ESP_DENTRO)
-        col.agregar(Ui.filaNav(a, Textos.P_REGISTRO, Textos.D_REGISTRO) { h.abrir(PantallaRegistro(h)) }, Ui.ESP_DENTRO)
-        col.agregar(Ui.filaNav(a, Textos.P_AJUSTES, Textos.D_AJUSTES) { h.abrir(PantallaAjustes(h)) }, Ui.ESP_DENTRO)
+        col.agregar(Ui.filaNav(a, Textos.P_LISTA, Textos.dListaCon(cfgLista.contactos.size), R.drawable.ic_nav_lista) { h.abrir(PantallaLista(h)) }, Ui.ESP_DENTRO)
+        col.agregar(Ui.filaNav(a, Textos.P_INFO, Textos.dInfoCon(info, MiInformacion.SECCIONES.size), R.drawable.ic_nav_info) { h.abrir(PantallaMiInfo(h)) }, Ui.ESP_DENTRO)
+        val negocio = try { com.soledad.app.rag.MiNegocio.crear(a).completas() } catch (e: Exception) { 0 }
+        col.agregar(Ui.filaNav(a, Textos.P_NEGOCIO, Textos.dNegocio(cfg.modoNegocio, negocio, com.soledad.app.rag.MiNegocio.SECCIONES.size),
+            R.drawable.ic_nav_negocio) { h.abrir(PantallaNegocio(h)) }, Ui.ESP_DENTRO)
+        col.agregar(Ui.filaNav(a, Textos.P_CEREBRO, Textos.D_CEREBRO, R.drawable.ic_nav_cerebro) { h.abrir(PantallaCerebro(h)) }, Ui.ESP_DENTRO)
+        col.agregar(Ui.filaNav(a, Textos.P_REGISTRO, Textos.D_REGISTRO, R.drawable.ic_nav_registro) { h.abrir(PantallaRegistro(h)) }, Ui.ESP_DENTRO)
+        col.agregar(Ui.filaNav(a, Textos.P_AJUSTES, Textos.D_AJUSTES, R.drawable.ic_nav_ajustes) { h.abrir(PantallaAjustes(h)) }, Ui.ESP_DENTRO)
 
         // 5. Revisar ahora (secundaria).
         col.agregar(Ui.boton(a, Textos.REVISAR_AHORA, Ui.Estilo.SECUNDARIO) {
@@ -122,9 +105,61 @@ class PantallaInicio(h: Anfitrion) : Pantalla(h) {
         return col
     }
 
-    private fun dato(a: Activity, etiqueta: String, valor: String): View = Ui.columna(a).apply {
+    /** Tarjeta principal con degradado: el ícono, «Encendida/Apagada» en grande y la palanca. */
+    private fun principal(a: Activity, encendida: Boolean, listaVacia: Boolean, items: List<ItemSemaforo>, negocio: Boolean): View {
+        val color = if (encendida) Ui.p.acento else Ui.p.tenue
+        val caja = Ui.columna(a).apply {
+            val r = Ui.dp(a, 20)
+            setPadding(r, r, r, r)
+            background = GradientDrawable(GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Ui.mezclar(Ui.p.superficie, Ui.p.acento, if (encendida) 0.42f else 0.14f), Ui.p.superficie)).apply {
+                cornerRadius = Ui.dp(a, Ui.RADIO_TARJETA).toFloat()
+            }
+        }
+        val fila = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        fila.addView(ImageView(a).apply {
+            setImageResource(R.mipmap.ic_launcher)
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        }, LinearLayout.LayoutParams(Ui.dp(a, 56), Ui.dp(a, 56)))
+        val textos = Ui.columna(a).apply { setPadding(Ui.dp(a, 14), 0, Ui.dp(a, 8), 0) }
+        textos.addView(Ui.texto(a, Textos.INTERRUPTOR_TITULO, Ui.T_NOTA, Ui.p.tenue, mono = true, negrita = true))
+        textos.addView(Ui.texto(a, if (encendida) Textos.ESTADO_ENCENDIDA else Textos.ESTADO_APAGADA, 26f, color, negrita = true))
+        fila.addView(textos, LinearLayout.LayoutParams(0, -2, 1f))
+        val sw = Switch(a).apply {
+            isChecked = encendida
+            minHeight = Ui.dp(a, Ui.MIN_TOQUE); minimumHeight = Ui.dp(a, Ui.MIN_TOQUE)
+            minWidth = Ui.dp(a, Ui.MIN_TOQUE); minimumWidth = Ui.dp(a, Ui.MIN_TOQUE)
+            contentDescription = Textos.INTERRUPTOR_TITULO
+            thumbTintList = ColorStateList(arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()), intArrayOf(Ui.p.acento, Ui.p.tenue))
+            trackTintList = ColorStateList(arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()),
+                intArrayOf(Ui.mezclar(Ui.p.superficie, Ui.p.acento, 0.55f), Ui.p.borde))
+        }
+        fila.addView(sw)
+        caja.addView(fila)
+        caja.agregar(Ui.texto(a, if (!encendida) Textos.LEMA else if (negocio) Textos.INTERRUPTOR_ON_NEGOCIO else Textos.INTERRUPTOR_ON, Ui.T_NOTA, Ui.p.texto), Ui.ESP_DENTRO + 4)
+        sw.setOnCheckedChangeListener { _, v ->
+            if (v) {
+                if (Semaforo.bloqueantes(items) > 0) {
+                    h.avisar(Textos.FALTA_PARA_ENCENDER, error = true)
+                    h.refrescar()
+                    return@setOnCheckedChangeListener
+                }
+                Soledad.activar(a)
+                h.avisar(if (listaVacia) Textos.LISTA_VACIA_AVISO else Textos.ENCENDIDA_AVISO, listaVacia)
+            } else {
+                Soledad.desactivar(a)
+                h.avisar(Textos.APAGADA_AVISO)
+            }
+            h.refrescar()
+        }
+        return caja
+    }
+
+    /** Dato destacado: etiqueta chica, valor grande y una aclaración. */
+    private fun dato(a: Activity, etiqueta: String, valor: String, aclaracion: String): View = Ui.tarjeta(a).apply {
         agregar(Ui.texto(a, etiqueta, Ui.T_NOTA, Ui.p.tenue, mono = true, negrita = true))
-        agregar(Ui.texto(a, valor, Ui.T_CUERPO, Ui.p.texto).apply { setTextIsSelectable(true) }, 2)
+        agregar(Ui.texto(a, valor, 24f, Ui.p.texto, negrita = true), 2)
+        agregar(Ui.nota(a, aclaracion))
     }
 
     private fun filaSemaforo(a: Activity, it: ItemSemaforo): View {

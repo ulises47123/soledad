@@ -50,7 +50,7 @@ class AzarTest {
 
     @Test fun intervalosInvalidosNoSeUsan() {
         val rnd = Random(1)
-        val cfg = ConfigSoledad(intervalosMin = listOf(1, 999), variacionMin = 0)
+        val cfg = ConfigSoledad(intervalosMin = listOf(7, 999), variacionMin = 0)
         repeat(300) { assertTrue(Azar.proximoIntervaloMs(rnd, cfg) / MIN in setOf(20L, 50L, 120L)) }
         val solo50 = ConfigSoledad(intervalosMin = listOf(50), variacionMin = 0)
         repeat(100) { assertEquals(50 * MIN, Azar.proximoIntervaloMs(rnd, solo50)) }
@@ -361,5 +361,19 @@ class MotorSoledadTest {
         ahora += 6 * MIN
         motor.responderPendientes()
         assertEquals(1, enviados.size)
+    }
+
+    @Test fun cadaUnMinutoEsExactoYOpcional() {
+        val rnd = kotlin.random.Random(7)
+        val solo1 = ConfigSoledad(intervalosMin = listOf(1), variacionMin = 10)
+        repeat(100) { assertEquals(60_000L, Azar.proximoIntervaloMs(rnd, solo1)) }
+        assertTrue(Azar.rapido(solo1))
+        // Por defecto no está: siguen siendo 20, 50 y 120.
+        assertFalse(Azar.rapido(ConfigSoledad()))
+        assertEquals(listOf(20, 50, 120), ConfigSoledad().intervalosMin)
+        // Mezclado con otro intervalo puede tocar cualquiera de los dos.
+        val mezcla = ConfigSoledad(intervalosMin = listOf(1, 20), variacionMin = 0)
+        val vistos = (1..200).map { Azar.proximoIntervaloMs(rnd, mezcla) / 60_000L }.toSet()
+        assertEquals(setOf(1L, 20L), vistos)
     }
 }

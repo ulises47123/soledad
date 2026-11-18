@@ -37,10 +37,10 @@ object Contraste {
 object Paletas {
     private fun c(hex: String) = (0xFF000000L or hex.removePrefix("#").toLong(16)).toInt()
 
-    /** Verde zombi sobre oscuro (la misma familia que el ícono). */
+    /** Noche: violeta lavanda sobre azul muy oscuro (la misma familia que el ícono de la luna). */
     val SOLEDAD = Paleta(
-        "Soledad", c("#101513"), c("#1A221E"), c("#E9EFEA"), c("#A7B6AC"),
-        c("#9FE07F"), c("#101513"), c("#8FDB8F"), c("#F2C14B"), c("#FF8F8F"), c("#FFFFFF"), c("#7E9185"),
+        "Soledad", c("#0E0F1C"), c("#1A1C2E"), c("#EDEEF8"), c("#AAAEC8"),
+        c("#BBAEFF"), c("#15122E"), c("#7FDCA4"), c("#F5C563"), c("#FF9A9A"), c("#FFFFFF"), c("#7F84A6"),
     )
 }
 

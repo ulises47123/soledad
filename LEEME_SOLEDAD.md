@@ -149,3 +149,24 @@ adb -s <serial> install -r app/build/outputs/apk/debug/Soledad-debug.apk
 - **Arreglo**: «Agregar marcados» en el selector de contactos solo agrega; quitar es exclusivo del botón «Quitar»
   (que además ignora toques durante un instante después de cerrar el selector).
 - Los mensajes ignorados (fuera de la lista, grupos) se anotan una sola vez en el Registro.
+
+## Versión 1.4 (18/11/2026)
+
+- **Aspecto nuevo**: colores de noche (violeta sobre azul oscuro), letra del sistema en vez de monoespaciada, tarjeta principal con el estado en grande, pastillas de estado y menú con íconos. Ícono nuevo: globo de chat con una luna.
+- **Mi cerebro** (pantalla propia, antes era una sección de Ajustes): cuando preguntan por un momento («¿qué hacés el sábado a la tarde?», «mañana a las 5», «el 25», «el finde»), el teléfono busca ese día en el calendario, calcula si choca con algo y qué rato queda libre, y se lo pasa a la IA ya resuelto (bloque «TE PREGUNTAN POR»). Mira más allá de 7 días si la fecha es lejana. Botón «Probar una pregunta» que muestra lo que encontró y lo que contestaría.
+- **Información extra**: notas sueltas (horarios fijos, etc.) que se agregan desde Mi cerebro y se buscan con el RAG.
+- **Modo negocio** (pantalla «Mi negocio»): a quien NO está agendado (WhatsApp lo muestra como número) le contesta como el emprendimiento, solo con los datos cargados ahí; no confirma pedidos ni inventa precios, siempre lleva «(respuesta automática)» y avisa que es un asistente en el primer mensaje. La lista blanca sigue contestando como vos; agendados fuera de la lista y grupos, nunca. Los datos del negocio están separados de «Mi información»: a un desconocido no le llega nada personal ni la agenda.
+- **Lista blanca**: se quitó la opción de escribir un nombre a mano; solo se elige de la agenda.
+- **Robustez**: no se pierden mensajes que llegan mientras otra respuesta está en curso; un envío interrumpido no se repite; lo ya contestado no vuelve a mandarse a la IA.
+- Tests: 196.
+
+Pendiente conocido: el modo negocio se probó con la simulación y con tests; falta una prueba real desde un número no agendado.
+
+### Agregado después (18/11/2026, misma versión 1.4)
+
+- **Cada 1 minuto**: intervalo opcional en Ajustes → Cuándo revisa. Cada vuelta solo lee las notificaciones; la IA se llama únicamente si hay un mensaje para contestar. En ese modo entra a WhatsApp como mucho cada 20 minutos y no llena el Registro.
+- **Tope por hora**: de 4 a 10 respuestas por chat (con 4, los mensajes seguidos quedaban sin respuesta).
+- **Calendario por nombre**: «¿cuándo es el cumple de Ana?» busca el evento por nombre en los próximos 12 meses.
+- **Notas de Mi cerebro**: Soledad busca en las notas y el cuaderno lo que le preguntan (interruptor en la pantalla Mi cerebro). Necesita la versión de Mi cerebro que comparte las notas (`content://<paquete>.tareas/notas`).
+- Si le preguntan si tenés o sabés algo que no figura en ningún lado, no contesta ni sí ni no: dice que se fija y avisa.
+- Tests: 199.

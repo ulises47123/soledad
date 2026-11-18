@@ -160,7 +160,9 @@ class MotorSoledad(
             anotar(null, Etapa.ERROR, resumen)
         } else {
             var leidos = antes
-            if (cfg.entrarAWhatsApp) {
+            // Revisando cada minuto no se abre WhatsApp en cada vuelta: sería molesto y llamativo.
+            val tocaVisita = !Azar.rapido(cfg) || reloj() - estado.ultimaVisitaMs >= Azar.PAUSA_VISITA_RAPIDA_MS
+            if (cfg.entrarAWhatsApp && tocaVisita) {
                 val desbloqueado = cfg.desbloquear && telefono.bloqueado() && intentarDesbloquear(cfg, "entrar un momento a WhatsApp")
                 val (entro, nota) = try { visita.entrarUnMomento() } catch (e: Throwable) { false to "no pude entrar: ${e.javaClass.simpleName}" }
                 if (desbloqueado) volverABloquear()
@@ -187,7 +189,10 @@ class MotorSoledad(
         estado.ultimoChequeoMs = ahora
         planificador.programarChequeo(proximo)
         reprogramarRespuestas()
-        anotar(null, Etapa.CHEQUEO, "$resumen Próxima revisión: ${hora(proximo)}.")
+        // Cada minuto y sin novedades no se llena el Registro: solo se anota cuando hubo algo.
+        if (!Azar.rapido(cfg) || resumen != SIN_NOVEDADES_ANTERIOR.also { SIN_NOVEDADES_ANTERIOR = resumen }) {
+            anotar(null, Etapa.CHEQUEO, "$resumen Próxima revisión: ${hora(proximo)}.")
+        }
         return resumen
     }
 
@@ -255,7 +260,7 @@ class MotorSoledad(
         m.contains("grupo") -> "es un grupo, no respondo"
         m.contains("trivial") -> "mensaje corto o multimedia, no hace falta responder"
         m.contains("sensible") -> "toca un tema sensible (${m.substringAfter("tema sensible: ")}), no respondo"
-        m.contains("límite") -> "ya le respondí varias veces en la última hora"
+        m.contains("límite") -> "llegué al tope de respuestas por hora con este chat (${m.substringAfter("límite de ").substringBefore(" ")}); sigo cuando pase la hora"
         m.isBlank() -> "no corresponde responder"
         else -> m
     }
@@ -320,8 +325,10 @@ class MotorSoledad(
             anotar(m, Etapa.ERROR, "No pude redactar la respuesta para ${m.nombre}: ${r.nota}.")
             return
         }
-        val texto = Etiqueta.aplicar(base, cfg)
-        val via = viaDe(r.nota)
+        // A un desconocido siempre se le avisa que la respuesta es automática.
+        val esNegocio = r.nota.startsWith("IA_NEGOCIO")
+        val texto = Etiqueta.aplicar(base, if (esNegocio) cfg.copy(etiquetaActiva = true) else cfg)
+        val via = viaDe(r.nota) + if (esNegocio) ", modo negocio" else ""
 
         if (cfg.modoPrueba) {
             cola.marcar(m.id, EstadoCola.DESCARTADO, "modo prueba: no se envió")
@@ -343,6 +350,8 @@ class MotorSoledad(
             }
             val accion = AccionEnvio.Texto(m.chatId, texto)
             val desde = reloj()
+            // Se marca ANTES de enviar: si el sistema mata la app en medio del envío, al volver no lo manda otra vez.
+            cola.marcar(m.id, EstadoCola.ENVIADO, "enviando")
             val env = enviador.enviar(accion)
             if (!env.ok) {
                 cola.marcar(m.id, EstadoCola.FALLIDO, "envío falló: ${env.nota}")
@@ -419,6 +428,9 @@ class MotorSoledad(
         estado.proximoChequeoMs = 0
         anotar(null, Etapa.SISTEMA, "$motivo." + if (n > 0) " Cancelé $n respuesta(s) programada(s)." else "")
     }
+
+    /** Último resumen anotado en modo «cada minuto», para no repetir la misma línea sin parar. */
+    private var SIN_NOVEDADES_ANTERIOR = ""
 
     companion object {
         const val PAUSA_TRAS_FALLO_MS = 60 * 60_000L

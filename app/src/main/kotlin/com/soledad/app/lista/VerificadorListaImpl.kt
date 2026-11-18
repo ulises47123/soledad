@@ -26,6 +26,8 @@ class VerificadorListaImpl(
     private val estado: EstadoLista,
     private val reloj: () -> Long = System::currentTimeMillis,
     private val zona: TimeZone = TimeZone.getDefault(),
+    /** Modo negocio encendido: los chats de gente no agendada se responden aunque no estén en la lista. */
+    private val modoNegocio: () -> Boolean = { false },
     /** «A todos los que me escriban»: no se exige estar en la lista (los grupos siguen sin responderse). */
     private val aTodos: () -> Boolean = { false },
 ) : VerificadorLista {
@@ -57,7 +59,8 @@ class VerificadorListaImpl(
                 (m.nombre.isNotBlank() && Nombres.mismo(it.nombre, m.nombre))
         }
         if (c.modo == ModoLista.EXCLUIDOS && enLista) return no("contacto en la lista de excluidos")
-        if (c.modo == ModoLista.PERMITIDOS && !enLista && !aTodos()) return no("contacto fuera de la lista de permitidos")
+        val esNegocio = !enLista && Perfiles.de(m.nombre, m.grupo, modoNegocio()) == Perfil.NEGOCIO
+        if (c.modo == ModoLista.PERMITIDOS && !enLista && !aTodos() && !esNegocio) return no("contacto fuera de la lista de permitidos")
 
         val previos = synchronized(textosPrevios) {
             val cola = textosPrevios.getOrPut(m.chatId) { ArrayDeque() }
@@ -68,9 +71,12 @@ class VerificadorListaImpl(
             }
             anteriores.takeLast(3)
         }
-        sensible(c, listOf(m.texto) + previos)?.let { return no("tema sensible: $it") }
+        // A un cliente no se lo frena por hablar de plata o transferencias: solo por lo que huele a estafa (códigos, claves).
+        val reglas = if (esNegocio) c.copy(bloqueadas = Perfiles.BLOQUEADAS_NEGOCIO) else c
+        sensible(reglas, listOf(m.texto) + previos)?.let { return no("tema sensible: $it") }
 
-        if (estado.enUltimaHora(m.chatId, ahora) >= c.limiteRespuestasHora) return no("límite de ${c.limiteRespuestasHora} respuestas por hora alcanzado")
+        val limite = if (esNegocio) maxOf(c.limiteRespuestasHora, Perfiles.LIMITE_HORA_NEGOCIO) else c.limiteRespuestasHora
+        if (estado.enUltimaHora(m.chatId, ahora) >= limite) return no("límite de $limite respuestas por hora alcanzado")
         return Veredicto.RESPONDER_IA
     }
 
@@ -96,7 +102,9 @@ class VerificadorListaImpl(
         fun crear(ctx: Context): VerificadorLista = crearConjunto(ctx).first
 
         /** Verificador y ListaContactos comparten configuración y estado. */
-        fun crearConjunto(ctx: Context, aTodos: () -> Boolean = { false }): Pair<VerificadorListaImpl, ListaContactos> {
+        fun crearConjunto(
+            ctx: Context, aTodos: () -> Boolean = { false }, modoNegocio: () -> Boolean = { false },
+        ): Pair<VerificadorListaImpl, ListaContactos> {
             val dir = File(ctx.filesDir, "verificacion_lista")
             val repo = RepositorioConfig(AlmacenArchivo(File(dir, "config.yaml"))) {
                 try {
@@ -104,7 +112,7 @@ class VerificadorListaImpl(
                 } catch (_: Exception) { null }
             }
             val estado = EstadoLista(AlmacenArchivo(File(dir, "estado.json")))
-            return VerificadorListaImpl(repo, estado, aTodos = aTodos) to ListaContactos(repo, estado)
+            return VerificadorListaImpl(repo, estado, aTodos = aTodos, modoNegocio = modoNegocio) to ListaContactos(repo, estado)
         }
 
         private val PLACEHOLDERS = setOf(

@@ -44,7 +44,7 @@ class SoledadApp : Application() {
         Servicios.cola = ColaSqlite.crear(ctx)
         Servicios.registro = RegistroSqlite.crear(ctx)
         val ajustesPrevios = AjustesSoledad(ctx)
-        val (lista, contactos) = VerificadorListaImpl.crearConjunto(ctx) { ajustesPrevios.leer().responderATodos }
+        val (lista, contactos) = VerificadorListaImpl.crearConjunto(ctx, { ajustesPrevios.leer().responderATodos }, { ajustesPrevios.leer().modoNegocio })
         Servicios.lista = lista
         val gestor = GestorApisImpl.crear(ctx)
         Servicios.apis = gestor
