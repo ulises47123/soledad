@@ -150,6 +150,9 @@ class ConsultaTest {
         assertTrue(Coincidencias.elegir("cuando es tu cumple?", ev, ahora).isEmpty())
         assertTrue(Coincidencias.elegir("cuando tenes parcial?", ev, ahora).isEmpty())
         assertTrue(Coincidencias.elegir("hola como estas", ev, ahora).isEmpty())
+        // Una palabra suelta que coincide con un título no alcanza si no preguntan por una fecha.
+        assertTrue(Coincidencias.elegir("contame que onda con redes", ev, ahora).isEmpty())
+        assertEquals(listOf("Parcial de Redes"), Coincidencias.elegir("que dia es lo de redes?", ev, ahora).map { it.titulo })
         assertEquals("", Coincidencias.texto(emptyList(), ahora, zona))
     }
 

@@ -256,6 +256,9 @@ object Coincidencias {
         "cumple", "cumpleanos", "cumpleanios", "examen", "parcial", "final", "clase", "clases", "reunion", "entrega", "turno", "feriado",
     )
 
+    /** La pregunta habla de fechas o del calendario («cuándo», «qué día», «falta mucho para…»). */
+    private val PIDE_FECHA = Regex("\\b(cuando|que dia|que fecha|fecha|fechas|calendario|agenda|cae|caen|falta|faltan|anotado|anotada)\\b")
+
     fun palabras(pregunta: String): List<String> =
         LectorFecha.normalizar(pregunta).split(Regex("[^a-z0-9ñ]+")).filter { it.length >= 4 && it !in VACIAS }.distinct()
 
@@ -263,11 +266,14 @@ object Coincidencias {
         val buscadas = palabras(pregunta)
         val propias = buscadas.filter { it !in GENERICAS }
         if (propias.isEmpty()) return emptyList()
+        // Sin «cuándo», «qué día» ni un tipo de evento («cumple», «examen»), una sola palabra parecida no alcanza:
+        // «contame qué te pasó» no es preguntar por el feriado «Paso a la Inmortalidad…».
+        val minimo = if (PIDE_FECHA.containsMatchIn(LectorFecha.normalizar(pregunta)) || buscadas.any { it in GENERICAS }) 1 else 2
         val puntuados = eventos.filter { it.finMs > ahora }.mapNotNull { e ->
             val titulo = LectorFecha.normalizar(e.titulo).split(Regex("[^a-z0-9ñ]+"))
             fun esta(p: String) = titulo.any { it == p || (p.length >= 5 && it.startsWith(p)) || (it.length >= 5 && p.startsWith(it)) }
             val aciertosPropios = propias.count { esta(it) }
-            if (aciertosPropios == 0) null else e to aciertosPropios * 10 + buscadas.count { it in GENERICAS && esta(it) }
+            if (aciertosPropios < minimo) null else e to aciertosPropios * 10 + buscadas.count { it in GENERICAS && esta(it) }
         }
         val mejor = puntuados.maxOfOrNull { it.second } ?: return emptyList()
         return puntuados.filter { it.second == mejor }.map { it.first }
