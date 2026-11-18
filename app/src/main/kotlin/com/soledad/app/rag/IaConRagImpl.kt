@@ -167,6 +167,8 @@ class IaConRagImpl(
                 "Si ahí figura «LINK PEDIDO», es el link que te están pidiendo: mandalo completo y copiado tal cual, sin cambiarle ni una letra, " +
                 "con una frase corta; mandá solo ese, nunca otro link ni uno inventado. Si dice que tenés links guardados de varios temas " +
                 "y no queda claro cuál quieren, preguntá cuál. " +
+                "Si MI AGENDA trae «TU ÁNIMO», así te sentís: si te preguntan cómo estás, contestá acorde y con naturalidad en una frase corta, " +
+                "sin inventar el motivo ni dar detalles; si insisten en por qué, decí que después le contás. " +
                 "Si MI AGENDA trae «ENCONTRADO EN TU CALENDARIO», es lo que te están preguntando: contestá con esa fecha. " +
                 "Si MI AGENDA trae «TE PREGUNTAN POR», contestá con eso: si estás ocupado decí con qué y a qué hora y, si queda un rato libre, " +
                 "mencionalo; si estás libre decí que por ahora no tenés nada anotado para ese momento. En los dos casos aclarás que después confirmás.") +
@@ -323,7 +325,7 @@ object FabricaRag {
             extraSistema = { MiInformacion.crear(ctx).instruccionesSistema() },
             agenda = { pregunta ->
                 val c = com.soledad.app.soledad.AjustesSoledad(ctx).leer()
-                com.soledad.app.agenda.MiAgenda.textoParaIa(ctx, c.usarCalendario, c.usarTareas, pregunta, usarNotas = c.usarNotas)
+                com.soledad.app.agenda.MiAgenda.textoParaIa(ctx, c.usarCalendario, c.usarTareas, pregunta, usarNotas = c.usarNotas, usarAnimo = c.usarAnimo)
             },
             perfil = { m -> Perfiles.de(m.nombre, m.grupo, com.soledad.app.soledad.AjustesSoledad(ctx).leer().modoNegocio) },
             negocio = { MiNegocio.crear(ctx).datos() },

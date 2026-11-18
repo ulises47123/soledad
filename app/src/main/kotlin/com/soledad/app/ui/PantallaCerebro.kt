@@ -70,6 +70,10 @@ class PantallaCerebro(h: Anfitrion) : Pantalla(h) {
             cambiar { it.copy(usarNotas = v) }
         }, Ui.ESP_DENTRO)
 
+        col.agregar(Ui.interruptor(a, Textos.USAR_ANIMO, cfg.usarAnimo, { if (it) Textos.USAR_ANIMO_ON else Textos.USAR_ANIMO_OFF }) { v ->
+            cambiar { it.copy(usarAnimo = v) }
+        }, Ui.ESP_DENTRO)
+
         // Probar.
         col.agregar(Ui.seccion(a, Textos.CEREBRO_PROBAR), Ui.ESP_GRUPO)
         col.agregar(Ui.nota(a, Textos.CEREBRO_PROBAR_NOTA), Ui.ESP_DENTRO)
@@ -144,8 +148,8 @@ class PantallaCerebro(h: Anfitrion) : Pantalla(h) {
             h.avisar(Textos.PROBANDO)
             h.enSegundoPlano({
                 val c = Soledad.ajustes.leer()
-                val agenda = MiAgenda.textoParaIa(a, c.usarCalendario, c.usarTareas, q, usarNotas = c.usarNotas)
-                val encontro = agenda.split("\n\n").filter { it.startsWith("TE PREGUNTAN POR") || it.startsWith("ENCONTRADO EN TU CALENDARIO") || it.startsWith("EN TUS NOTAS") }
+                val agenda = MiAgenda.textoParaIa(a, c.usarCalendario, c.usarTareas, q, usarNotas = c.usarNotas, usarAnimo = c.usarAnimo)
+                val encontro = agenda.split("\n\n").filter { it.startsWith("TE PREGUNTAN POR") || it.startsWith("ENCONTRADO EN TU CALENDARIO") || it.startsWith("EN TUS NOTAS") || it.startsWith("TU ÁNIMO") }
                     .joinToString("\n\n").ifEmpty { Textos.CEREBRO_SIN_FECHA }
                 encontro to Soledad.simular(a, q)
             }) { r ->

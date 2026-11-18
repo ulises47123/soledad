@@ -202,4 +202,18 @@ class ConsultaTest {
         val largo = "https://ejemplo.test/notebook/aaa_111__x"
         assertEquals("Acá lo tenés: $largo", com.soledad.app.rag.IaConRagImpl.limpiar("**Acá lo tenés:** $largo", listOf(largo)))
     }
+
+    @Test fun `el animo solo sale si lo preguntan y es de hoy o de ayer`() {
+        val zona = TimeZone.getTimeZone("America/Argentina/Jujuy")
+        val ahora = Calendar.getInstance(zona).apply { set(2026, Calendar.NOVEMBER, 18, 18, 0, 0) }.timeInMillis
+        val hora = 3_600_000L
+        assertEquals("TU ÁNIMO (lo último que anotaste en tu diario, hoy): bien", Animo.texto("Hola, cómo estás?", 4, ahora - 3 * hora, ahora, zona))
+        assertEquals("TU ÁNIMO (lo último que anotaste en tu diario, ayer): muy mal", Animo.texto("que tal andas", 1, ahora - 26 * hora, ahora, zona))
+        assertTrue(Animo.preguntan("Cómo andás de ánimo?") && Animo.preguntan("todo bien?") && Animo.preguntan("como te sentis hoy"))
+        // Viejo, sin anotar o sin que lo pregunten: nada.
+        assertEquals("", Animo.texto("como estas", 4, ahora - 60 * hora, ahora, zona))
+        assertEquals("", Animo.texto("como estas", null, null, ahora, zona))
+        assertEquals("", Animo.texto("Tenés el cuaderno de inglés?", 4, ahora - hora, ahora, zona))
+        assertFalse(Animo.preguntan("como es el examen de mañana"))
+    }
 }

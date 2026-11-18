@@ -34,6 +34,8 @@ data class ConfigSoledad(
     val usarTareas: Boolean = true,
     /** Busca en las notas de Mi cerebro lo que venga al caso con cada pregunta. */
     val usarNotas: Boolean = true,
+    /** Si preguntan cómo estás, contesta según el ánimo anotado en el diario de Mi cerebro (solo el ánimo, nunca el texto). */
+    val usarAnimo: Boolean = false,
     /** Modo negocio: a quien no está agendado le contesta como el emprendimiento, con los datos de «Mi negocio». */
     val modoNegocio: Boolean = false,
     val timeoutVerificacionMs: Long = 20_000,

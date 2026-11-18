@@ -290,6 +290,30 @@ object Coincidencias {
     }
 }
 
+/**
+ * «¿Cómo estás?»: el ánimo que anotaste en el diario de Mi cerebro. Solo el valor (1 a 5) y el día: lo que escribiste
+ * en el diario nunca llega a Soledad. Lógica pura.
+ */
+object Animo {
+    private val PREGUNTA = Regex(
+        "\\b(como (estas|andas|andan|vas|venis|te sentis|te sientes|te encontras|te encuentras|amaneciste|va todo|va eso|te va|te fue|seguis|sigues)" +
+            "|que tal( estas| andas| vas| todo)?\\b|todo bien|todo ok|estas (bien|mal|mejor|triste|contento|contenta)|te sentis (bien|mal|mejor)" +
+            "|animo|animos|humor|andas bien|como lo llevas)"
+    )
+    private val NOMBRES = mapOf(5 to "muy bien", 4 to "bien", 3 to "normal, ni bien ni mal", 2 to "mal", 1 to "muy mal")
+
+    fun preguntan(pregunta: String): Boolean = PREGUNTA.containsMatchIn(LectorFecha.normalizar(pregunta))
+
+    /** "" si no preguntan por el ánimo, si no hay nada anotado o si lo último es de antes de ayer. */
+    fun texto(pregunta: String, valor: Int?, fechaMs: Long?, ahora: Long, zona: TimeZone = TimeZone.getDefault()): String {
+        if (valor == null || fechaMs == null || !preguntan(pregunta)) return ""
+        val nombre = NOMBRES[valor] ?: return ""
+        val dia = FormatoAgenda.dia(fechaMs, ahora, zona)
+        if (fechaMs > ahora || (dia != "hoy" && dia != "ayer")) return ""
+        return "TU ÁNIMO (lo último que anotaste en tu diario, $dia): $nombre"
+    }
+}
+
 /** Links dentro de un texto. Lógica pura. */
 object Links {
     val URL = Regex("https?://[^\\s<>\"«»]+")

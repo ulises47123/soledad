@@ -59,6 +59,7 @@ class AjustesSoledad(ctx: Context) {
             usarCalendario = p.getBoolean("usar_calendario", d.usarCalendario),
             usarTareas = p.getBoolean("usar_tareas", d.usarTareas),
             usarNotas = p.getBoolean("usar_notas", d.usarNotas),
+            usarAnimo = p.getBoolean("usar_animo", d.usarAnimo),
             modoNegocio = p.getBoolean("modo_negocio", d.modoNegocio),
         )
     }
@@ -81,6 +82,7 @@ class AjustesSoledad(ctx: Context) {
             .putBoolean("usar_calendario", c.usarCalendario)
             .putBoolean("usar_tareas", c.usarTareas)
             .putBoolean("usar_notas", c.usarNotas)
+            .putBoolean("usar_animo", c.usarAnimo)
             .putBoolean("modo_negocio", c.modoNegocio)
             .apply()
     }

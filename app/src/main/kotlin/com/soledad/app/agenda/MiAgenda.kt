@@ -174,6 +174,31 @@ object MiAgenda {
         return null
     }
 
+    /** Último ánimo anotado en el diario de Mi cerebro: (fecha, valor 1 a 5), o null. Mi cerebro no comparte el texto del diario. */
+    fun animo(ctx: Context): Pair<Long, Int>? {
+        if (!tareasPermitidas(ctx)) return null
+        for (paquete in PAQUETES_MYBRAIN) {
+            try {
+                val c = ctx.contentResolver.query(Uri.parse("content://$paquete.tareas/animo"), null, null, null, null) ?: continue
+                c.use {
+                    // Una versión vieja de Mi cerebro contesta con las tareas: se reconoce porque no trae «animo».
+                    val iA = it.getColumnIndex("animo")
+                    if (iA < 0) return null
+                    val iF = it.getColumnIndexOrThrow("fecha")
+                    var mejor: Pair<Long, Int>? = null
+                    while (it.moveToNext()) {
+                        val f = it.getLong(iF)
+                        if (mejor == null || f > mejor!!.first) mejor = f to it.getInt(iA)
+                    }
+                    return mejor
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "animo de $paquete: ${e.javaClass.simpleName}")
+            }
+        }
+        return null
+    }
+
     /** Notas de Mi cerebro, o null si no está instalado, no da permiso o es una versión que todavía no las comparte. */
     fun notas(ctx: Context): List<NotaCerebro>? {
         if (!tareasPermitidas(ctx)) return null
@@ -208,12 +233,16 @@ object MiAgenda {
     fun textoParaIa(
         ctx: Context, usarCalendario: Boolean, usarTareas: Boolean, pregunta: String = "", ahora: Long = System.currentTimeMillis(),
         usarNotas: Boolean = false,
+        usarAnimo: Boolean = false,
     ): String {
+        val deAnimo = if (usarAnimo && Animo.preguntan(pregunta)) {
+            try { animo(ctx)?.let { (fecha, valor) -> Animo.texto(pregunta, valor, fecha, ahora) }.orEmpty() } catch (e: Exception) { "" }
+        } else ""
         val deNotas = if (usarNotas && pregunta.isNotBlank()) {
             try { NotasCerebro.texto(NotasCerebro.elegir(pregunta, notas(ctx).orEmpty()), pregunta) } catch (e: Exception) { "" }
         } else ""
         val resto = agendaParaIa(ctx, usarCalendario, usarTareas, pregunta, ahora)
-        return listOf(deNotas, resto).filter { it.isNotEmpty() }.joinToString("\n\n")
+        return listOf(deAnimo, deNotas, resto).filter { it.isNotEmpty() }.joinToString("\n\n")
     }
 
     private fun agendaParaIa(ctx: Context, usarCalendario: Boolean, usarTareas: Boolean, pregunta: String, ahora: Long): String {
